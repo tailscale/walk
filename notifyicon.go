@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
 
 import (
+	"os"
 	"syscall"
 	"unsafe"
 
@@ -70,10 +72,158 @@ func notifyIconWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) (resul
 	return win.DefWindowProc(hwnd, msg, wParam, lParam)
 }
 
+func isTaskbarPresent() bool {
+	var abd win.APPBARDATA
+	abd.CbSize = uint32(unsafe.Sizeof(abd))
+	return win.SHAppBarMessage(win.ABM_GETTASKBARPOS, &abd) != 0
+}
+
+func copyStringToSlice(dst []uint16, src string) error {
+	ss, err := syscall.UTF16FromString(src)
+	if err != nil {
+		return err
+	}
+
+	copy(dst, ss)
+	return nil
+}
+
+type shellNotificationIcon struct {
+	id   *uint32
+	hWnd win.HWND
+}
+
+func newShellNotificationIcon(hWnd win.HWND) (*shellNotificationIcon, error) {
+	shellIcon := &shellNotificationIcon{hWnd: hWnd}
+	if !isTaskbarPresent() {
+		return shellIcon, nil
+	}
+
+	// Add our notify icon to the status area and make sure it is hidden.
+	cmd := shellIcon.newCmd(win.NIM_ADD)
+	cmd.setCallbackMessage(notifyIconMessageId)
+	cmd.setVisible(false)
+	if err := cmd.execute(); err != nil {
+		return nil, err
+	}
+
+	return shellIcon, nil
+}
+
+func (i *shellNotificationIcon) Dispose() error {
+	if cmd := i.newCmd(win.NIM_DELETE); cmd != nil {
+		if err := cmd.execute(); err != nil {
+			return err
+		}
+	}
+
+	i.id = nil
+	i.hWnd = 0
+	return nil
+}
+
+type niCmd struct {
+	shellIcon *shellNotificationIcon
+	op        uint32
+	nid       win.NOTIFYICONDATA
+}
+
+// newCmd creates a niCmd for the specified operation (one of the win.NIM_*
+// constants). If the taskbar does not exist, it returns nil.
+func (i *shellNotificationIcon) newCmd(op uint32) *niCmd {
+	if i.id == nil && op != win.NIM_ADD {
+		return nil
+	}
+
+	cmd := niCmd{shellIcon: i, op: op, nid: win.NOTIFYICONDATA{HWnd: i.hWnd}}
+	cmd.nid.CbSize = uint32(unsafe.Sizeof(cmd.nid))
+	if i.id != nil {
+		cmd.nid.UID = *(i.id)
+	}
+	return &cmd
+}
+
+func (cmd *niCmd) setBalloonInfo(title, info string, icon interface{}) error {
+	if err := copyStringToSlice(cmd.nid.SzInfoTitle[:], title); err != nil {
+		return err
+	}
+
+	if err := copyStringToSlice(cmd.nid.SzInfo[:], info); err != nil {
+		return err
+	}
+
+	switch i := icon.(type) {
+	case nil:
+		cmd.nid.DwInfoFlags = win.NIIF_NONE
+	case uint32:
+		cmd.nid.DwInfoFlags |= i
+	case win.HICON:
+		if i == 0 {
+			cmd.nid.DwInfoFlags = win.NIIF_NONE
+		} else {
+			cmd.nid.DwInfoFlags |= win.NIIF_USER
+			cmd.nid.HBalloonIcon = i
+		}
+	default:
+		return ErrInvalidType
+	}
+
+	cmd.nid.UFlags |= win.NIF_INFO
+	return nil
+}
+
+func (cmd *niCmd) setIcon(icon win.HICON) {
+	cmd.nid.HIcon = icon
+	cmd.nid.UFlags |= win.NIF_ICON
+}
+
+func (cmd *niCmd) setToolTip(tt string) error {
+	if err := copyStringToSlice(cmd.nid.SzTip[:], tt); err != nil {
+		return err
+	}
+
+	cmd.nid.UFlags |= win.NIF_TIP
+	return nil
+}
+
+func (cmd *niCmd) setCallbackMessage(msg uint32) {
+	cmd.nid.UCallbackMessage = msg
+	cmd.nid.UFlags |= win.NIF_MESSAGE
+}
+
+func (cmd *niCmd) setVisible(v bool) {
+	cmd.nid.UFlags |= win.NIF_STATE
+	cmd.nid.DwStateMask |= win.NIS_HIDDEN
+	if v {
+		cmd.nid.DwState &= ^uint32(win.NIS_HIDDEN)
+	} else {
+		cmd.nid.DwState |= win.NIS_HIDDEN
+	}
+}
+
+func (cmd *niCmd) execute() error {
+	if !win.Shell_NotifyIcon(cmd.op, &cmd.nid) {
+		return newError("Shell_NotifyIcon")
+	}
+
+	if cmd.op != win.NIM_ADD {
+		return nil
+	}
+
+	newId := cmd.nid.UID
+	cmd.shellIcon.id = &newId
+
+	// When executing an add, we also need to do a NIM_SETVERSION.
+	verCmd := *cmd
+	verCmd.op = win.NIM_SETVERSION
+	// We want XP-compatible message behavior.
+	verCmd.nid.UVersion = win.NOTIFYICON_VERSION
+	return verCmd.execute()
+}
+
 // NotifyIcon represents an icon in the taskbar notification area.
 type NotifyIcon struct {
-	id                      uint32
-	hWnd                    win.HWND
+	shellIcon               *shellNotificationIcon
 	lastDPI                 int
 	contextMenu             *Menu
 	icon                    Image
@@ -89,25 +239,9 @@ type NotifyIcon struct {
 // The NotifyIcon is initially not visible.
 func NewNotifyIcon(form Form) (*NotifyIcon, error) {
 	fb := form.AsFormBase()
-	// Add our notify icon to the status area and make sure it is hidden.
-	nid := win.NOTIFYICONDATA{
-		HWnd:             fb.hWnd,
-		UFlags:           win.NIF_MESSAGE | win.NIF_STATE,
-		DwState:          win.NIS_HIDDEN,
-		DwStateMask:      win.NIS_HIDDEN,
-		UCallbackMessage: notifyIconMessageId,
-	}
-	nid.CbSize = uint32(unsafe.Sizeof(nid) - unsafe.Sizeof(win.HICON(0)))
-
-	if !win.Shell_NotifyIcon(win.NIM_ADD, &nid) {
-		return nil, newError("Shell_NotifyIcon")
-	}
-
-	// We want XP-compatible message behavior.
-	nid.UVersion = win.NOTIFYICON_VERSION
-
-	if !win.Shell_NotifyIcon(win.NIM_SETVERSION, &nid) {
-		return nil, newError("Shell_NotifyIcon")
+	shellIcon, err := newShellNotificationIcon(fb.hWnd)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create and initialize the NotifyIcon already.
@@ -118,8 +252,7 @@ func NewNotifyIcon(form Form) (*NotifyIcon, error) {
 	menu.window = form
 
 	ni := &NotifyIcon{
-		id:          nid.UID,
-		hWnd:        fb.hWnd,
+		shellIcon:   shellIcon,
 		contextMenu: menu,
 	}
 
@@ -137,46 +270,20 @@ func (ni *NotifyIcon) DPI() int {
 	return fakeWb.DPI()
 }
 
+func (ni *NotifyIcon) isDefunct() bool {
+	return ni.shellIcon.hWnd == 0
+}
+
 func (ni *NotifyIcon) readdToTaskbar() error {
-	nid := win.NOTIFYICONDATA{
-		HWnd:             ni.hWnd,
-		UFlags:           win.NIF_MESSAGE | win.NIF_STATE,
-		DwState:          win.NIS_HIDDEN,
-		DwStateMask:      win.NIS_HIDDEN,
-		UCallbackMessage: notifyIconMessageId,
-	}
-	nid.CbSize = uint32(unsafe.Sizeof(nid) - unsafe.Sizeof(win.HICON(0)))
-
-	if !win.Shell_NotifyIcon(win.NIM_ADD, &nid) {
-		return newError("Shell_NotifyIcon")
-	}
-
-	// We want XP-compatible message behavior.
-	nid.UVersion = win.NOTIFYICON_VERSION
-
-	if !win.Shell_NotifyIcon(win.NIM_SETVERSION, &nid) {
-		return newError("Shell_NotifyIcon")
-	}
-
-	icon := ni.icon
-	ni.icon = nil
-	err := ni.SetIcon(icon)
-	if err != nil {
+	cmd := ni.shellIcon.newCmd(win.NIM_ADD)
+	cmd.setCallbackMessage(notifyIconMessageId)
+	cmd.setVisible(true)
+	cmd.setIcon(ni.getHICON(ni.icon))
+	if err := cmd.setToolTip(ni.toolTip); err != nil {
 		return err
 	}
-	visible := ni.visible
-	ni.visible = false
-	err = ni.SetVisible(visible)
-	if err != nil {
-		return err
-	}
-	tooltip := ni.toolTip
-	ni.toolTip = ""
-	err = ni.SetToolTip(tooltip)
-	if err != nil {
-		return err
-	}
-	return nil
+
+	return cmd.execute()
 }
 
 func (ni *NotifyIcon) applyDPI() {
@@ -197,64 +304,53 @@ func (ni *NotifyIcon) applyDPI() {
 	}
 }
 
-func (ni *NotifyIcon) notifyIconData() *win.NOTIFYICONDATA {
-	nid := &win.NOTIFYICONDATA{
-		UID:  ni.id,
-		HWnd: ni.hWnd,
-	}
-	nid.CbSize = uint32(unsafe.Sizeof(*nid) - unsafe.Sizeof(win.HICON(0)))
-
-	return nid
-}
-
 // Dispose releases the operating system resources associated with the
 // NotifyIcon.
 //
 // The associated Icon is not disposed of.
 func (ni *NotifyIcon) Dispose() error {
-	if ni.hWnd == 0 {
+	delete(notifyIcons, ni)
+	if ni.isDefunct() {
 		return nil
 	}
-	delete(notifyIcons, ni)
 
-	nid := ni.notifyIconData()
+	return ni.shellIcon.Dispose()
+}
 
-	if !win.Shell_NotifyIcon(win.NIM_DELETE, nid) {
-		return newError("Shell_NotifyIcon")
+func (ni *NotifyIcon) getHICON(icon Image) win.HICON {
+	if icon == nil {
+		return 0
 	}
 
-	ni.hWnd = 0
+	dpi := ni.DPI()
+	ic, err := iconCache.Icon(icon, dpi)
+	if err != nil {
+		return 0
+	}
 
-	return nil
+	return ic.handleForDPI(dpi)
 }
 
 func (ni *NotifyIcon) showMessage(title, info string, iconType uint32, icon Image) error {
-	nid := ni.notifyIconData()
-	nid.UFlags = win.NIF_INFO
-	nid.DwInfoFlags = iconType
-	var oldIcon Image
-	if iconType == win.NIIF_USER && icon != nil {
-		oldIcon = ni.icon
-		if err := ni.setNIDIcon(nid, icon); err != nil {
-			return err
-		}
-		nid.UFlags |= win.NIF_ICON
-	}
-	if title16, err := syscall.UTF16FromString(title); err == nil {
-		copy(nid.SzInfoTitle[:], title16)
-	}
-	if info16, err := syscall.UTF16FromString(info); err == nil {
-		copy(nid.SzInfo[:], info16)
-	}
-	if !win.Shell_NotifyIcon(win.NIM_MODIFY, nid) {
-		return newError("Shell_NotifyIcon")
-	}
-	if oldIcon != nil {
-		ni.icon = nil
-		ni.SetIcon(oldIcon)
+	cmd := ni.shellIcon.newCmd(win.NIM_MODIFY)
+	if cmd == nil {
+		return nil
 	}
 
-	return nil
+	switch iconType {
+	case win.NIIF_NONE, win.NIIF_INFO, win.NIIF_WARNING, win.NIIF_ERROR:
+		if err := cmd.setBalloonInfo(title, info, iconType); err != nil {
+			return err
+		}
+	case win.NIIF_USER:
+		if err := cmd.setBalloonInfo(title, info, ni.getHICON(icon)); err != nil {
+			return err
+		}
+	default:
+		return os.ErrInvalid
+	}
+
+	return cmd.execute()
 }
 
 // ShowMessage displays a neutral message balloon above the NotifyIcon.
@@ -309,32 +405,14 @@ func (ni *NotifyIcon) SetIcon(icon Image) error {
 		return nil
 	}
 
-	nid := ni.notifyIconData()
-	nid.UFlags = win.NIF_ICON
-	if icon == nil {
-		nid.HIcon = 0
-	} else {
-		if err := ni.setNIDIcon(nid, icon); err != nil {
+	if cmd := ni.shellIcon.newCmd(win.NIM_MODIFY); cmd != nil {
+		cmd.setIcon(ni.getHICON(icon))
+		if err := cmd.execute(); err != nil {
 			return err
 		}
 	}
 
-	if !win.Shell_NotifyIcon(win.NIM_MODIFY, nid) {
-		return newError("Shell_NotifyIcon")
-	}
-
 	ni.icon = icon
-
-	return nil
-}
-
-func (ni *NotifyIcon) setNIDIcon(nid *win.NOTIFYICONDATA, icon Image) error {
-	dpi := ni.DPI()
-	ic, err := iconCache.Icon(icon, dpi)
-	if err != nil {
-		return err
-	}
-	nid.HIcon = ic.handleForDPI(dpi)
 
 	return nil
 }
@@ -350,12 +428,13 @@ func (ni *NotifyIcon) SetToolTip(toolTip string) error {
 		return nil
 	}
 
-	nid := ni.notifyIconData()
-	nid.UFlags = win.NIF_TIP
-	copy(nid.SzTip[:], syscall.StringToUTF16(toolTip))
-
-	if !win.Shell_NotifyIcon(win.NIM_MODIFY, nid) {
-		return newError("Shell_NotifyIcon")
+	if cmd := ni.shellIcon.newCmd(win.NIM_MODIFY); cmd != nil {
+		if err := cmd.setToolTip(toolTip); err != nil {
+			return err
+		}
+		if err := cmd.execute(); err != nil {
+			return err
+		}
 	}
 
 	ni.toolTip = toolTip
@@ -374,15 +453,11 @@ func (ni *NotifyIcon) SetVisible(visible bool) error {
 		return nil
 	}
 
-	nid := ni.notifyIconData()
-	nid.UFlags = win.NIF_STATE
-	nid.DwStateMask = win.NIS_HIDDEN
-	if !visible {
-		nid.DwState = win.NIS_HIDDEN
-	}
-
-	if !win.Shell_NotifyIcon(win.NIM_MODIFY, nid) {
-		return newError("Shell_NotifyIcon")
+	if cmd := ni.shellIcon.newCmd(win.NIM_MODIFY); cmd != nil {
+		cmd.setVisible(visible)
+		if err := cmd.execute(); err != nil {
+			return err
+		}
 	}
 
 	ni.visible = visible
