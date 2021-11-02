@@ -5,6 +5,15 @@ Walk is a "Windows Application Library Kit" for the Go Programming Language.
 
 Its primarily useful for Desktop GUI development, but there is some more stuff.
 
+Fork from original module
+=========================
+
+This is a fork from the [original module](https://github.com/lxn/walk).
+
+Once the [dependent PR](https://github.com/lxn/win/pull/123) for `lxn/win`
+merges, we can attempt to merge the changes in this fork upstream,
+and ideally then be able to discontinue this fork.
+
 Setup
 =====
 
