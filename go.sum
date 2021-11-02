@@ -1,0 +1,9 @@
+github.com/tailscale/walk v0.0.0-20210112085537-c389da54e794 h1:misk6AIwfNWMTEcDcB0ww97z/Om7EF3kAVSTCy3KK1w=
+github.com/tailscale/walk v0.0.0-20210112085537-c389da54e794/go.mod h1:2A8sVOCfHDtfaRQ7LbQbX2ODLD6RDf8bVRl6ZosnRRE=
+github.com/tailscale/win v0.0.0-20211102182607-087472efce52 h1:g2llw+LZ/iYZzGVhuPhR7CAdxFFm/7K3H+YivLVSS6A=
+github.com/tailscale/win v0.0.0-20211102182607-087472efce52/go.mod h1:pW76gHd94DwbTRePyhfsevz9KvQJHBtNT7vZ+TmqBCs=
+golang.org/x/sys v0.0.0-20201018230417-eeed37f84f13/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20211102061401-a2f17f7b995c h1:QOfDMdrf/UwlVR0UBq2Mpr58UzNtvgJRXA4BgPfFACs=
+golang.org/x/sys v0.0.0-20211102061401-a2f17f7b995c/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+gopkg.in/Knetic/govaluate.v3 v3.0.0 h1:18mUyIt4ZlRlFZAAfVetz4/rzlJs9yhN+U02F4u1AOc=
+gopkg.in/Knetic/govaluate.v3 v3.0.0/go.mod h1:csKLBORsPbafmSCGTEh3U7Ozmsuq8ZSIlKk1bcqph0E=
