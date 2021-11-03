@@ -277,7 +277,7 @@ func (ni *NotifyIcon) isDefunct() bool {
 func (ni *NotifyIcon) readdToTaskbar() error {
 	cmd := ni.shellIcon.newCmd(win.NIM_ADD)
 	cmd.setCallbackMessage(notifyIconMessageId)
-	cmd.setVisible(true)
+	cmd.setVisible(ni.visible)
 	cmd.setIcon(ni.getHICON(ni.icon))
 	if err := cmd.setToolTip(ni.toolTip); err != nil {
 		return err
