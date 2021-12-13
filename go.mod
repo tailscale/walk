@@ -11,5 +11,5 @@ require (
 
 replace (
 	github.com/lxn/walk => github.com/tailscale/walk v0.0.0-20211102184543-a1629da8e766
-	github.com/lxn/win => github.com/tailscale/win v0.0.0-20211102205409-55fb19b60559
+	github.com/lxn/win => github.com/tailscale/win v0.0.0-20211213204608-c3f813abca9f
 )

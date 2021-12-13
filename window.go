@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -441,6 +442,8 @@ type WindowBase struct {
 	visible                   bool
 	enabled                   bool
 	acc                       *Accessibility
+	// onHelp is the possibly nil func passed to WindowBase.SetHelp.
+	onHelp func(hwnd win.HWND, wb *WindowBase, hi *win.HELPINFO) (handled bool)
 }
 
 var (
@@ -832,6 +835,13 @@ func (wb *WindowBase) Name() string {
 // SetName sets the name of the *WindowBase.
 func (wb *WindowBase) SetName(name string) {
 	wb.name = name
+}
+
+// SetHelp sets a function that's called when the window gets a WM_HELP message.
+// If f is nil or f returns handled == false, the message is bubbled up
+// to DefWindowProc.
+func (wb *WindowBase) SetHelp(f func(hwnd win.HWND, wb *WindowBase, hi *win.HELPINFO) (handled bool)) {
+	wb.onHelp = f
 }
 
 func (wb *WindowBase) writePath(buf *bytes.Buffer) {
@@ -2328,6 +2338,10 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 	window := windowFromHandle(hwnd)
 
 	switch msg {
+	case win.WM_HELP:
+		if wb.onHelp != nil && wb.onHelp(hwnd, wb, (*win.HELPINFO)(unsafe.Pointer(lParam))) {
+			return win.TRUE
+		}
 	case win.WM_ERASEBKGND:
 		if _, ok := window.(Widget); !ok {
 			return 0
