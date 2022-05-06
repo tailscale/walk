@@ -203,7 +203,7 @@ func (cmd *niCmd) setVisible(v bool) {
 
 func (cmd *niCmd) execute() error {
 	if !win.Shell_NotifyIcon(cmd.op, &cmd.nid) {
-		return newError("Shell_NotifyIcon")
+		return lastError("Shell_NotifyIcon")
 	}
 
 	if cmd.op != win.NIM_ADD {
