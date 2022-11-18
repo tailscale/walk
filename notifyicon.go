@@ -8,6 +8,7 @@
 package walk
 
 import (
+	"fmt"
 	"os"
 	"syscall"
 	"unsafe"
@@ -202,8 +203,8 @@ func (cmd *niCmd) setVisible(v bool) {
 }
 
 func (cmd *niCmd) execute() error {
-	if !win.Shell_NotifyIcon(cmd.op, &cmd.nid) {
-		return lastError("Shell_NotifyIcon")
+	if err := win.Shell_NotifyIcon(cmd.op, &cmd.nid); err != nil {
+		return fmt.Errorf("Shell_NotifyIcon: %w", err)
 	}
 
 	if cmd.op != win.NIM_ADD {
