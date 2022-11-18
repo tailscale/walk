@@ -1,7 +1,7 @@
-github.com/tailscale/walk v0.0.0-20211102184543-a1629da8e766 h1:kECwlp2VlKhR2dlImNZXVzAzo+L2YTJoSA9UKxm6rOI=
-github.com/tailscale/walk v0.0.0-20211102184543-a1629da8e766/go.mod h1:NXsqAC97i9TpxbWLrzI5gZcSYs0tz9IIh308SJWTPp4=
-github.com/tailscale/win v0.0.0-20211213204608-c3f813abca9f h1:VRYHqFM2JIfGJOdvq8Ts5Bmayqj8Ybcn5GIpzEfZWNo=
-github.com/tailscale/win v0.0.0-20211213204608-c3f813abca9f/go.mod h1:pW76gHd94DwbTRePyhfsevz9KvQJHBtNT7vZ+TmqBCs=
+github.com/tailscale/walk v0.0.0-20220506150313-ed127cfb919a h1:uptpnGzRLeSxntDX81sonfvoqxSH54COkJcX14TYWAo=
+github.com/tailscale/walk v0.0.0-20220506150313-ed127cfb919a/go.mod h1:8mDkfXFy+FtezqBBO6mTwoBpW32aetZkrZxBNrdoU3A=
+github.com/tailscale/win v0.0.0-20221118185520-e8ccca099752 h1:HEjbCnclYTqYGERu4RVMkU6cczgpzUd5TQbvT1AStbw=
+github.com/tailscale/win v0.0.0-20221118185520-e8ccca099752/go.mod h1:pW76gHd94DwbTRePyhfsevz9KvQJHBtNT7vZ+TmqBCs=
 golang.org/x/sys v0.0.0-20201018230417-eeed37f84f13/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20211102061401-a2f17f7b995c h1:QOfDMdrf/UwlVR0UBq2Mpr58UzNtvgJRXA4BgPfFACs=
 golang.org/x/sys v0.0.0-20211102061401-a2f17f7b995c/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
