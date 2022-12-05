@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/lxn/win"
+	"github.com/tailscale/win"
 )
 
 const groupBoxWindowClass = `\o/ Walk_GroupBox_Class \o/`

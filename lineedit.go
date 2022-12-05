@@ -12,7 +12,7 @@ import (
 )
 
 import (
-	"github.com/lxn/win"
+	"github.com/tailscale/win"
 )
 
 type CaseMode uint32

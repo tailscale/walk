@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lxn/win"
+	"github.com/tailscale/win"
 )
 
 var (

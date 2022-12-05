@@ -12,7 +12,7 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/lxn/win"
+	"github.com/tailscale/win"
 )
 
 // DrawText format flags
