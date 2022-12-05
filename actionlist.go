@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -92,6 +93,56 @@ func (l *ActionList) indexInObserver(action *Action) int {
 	}
 
 	return -1
+}
+
+// positionsForExclusiveCheck determines the positional index values to be
+// passed in to win.CheckMenuRadioItem when action is to be set as checked.
+func (l *ActionList) positionsForExclusiveCheck(action *Action) (first, last, index int, err error) {
+	actionsIdx := -1
+
+	// Find the index of action in actions. We must compute this index in two
+	// distinct ways: both including and excluding hidden items.
+	// We need both because we need to iterate through l.actions, but we also need
+	// to provide indexes to Windows that exclude hidden items.
+
+	// This loop is identical to (*ActionList).indexInObserver except that we also
+	// retain actionsIdx, the index that includes hidden items.
+	for i, a := range l.actions {
+		if a == action {
+			actionsIdx = i
+			break
+		}
+		if a.Visible() {
+			index++
+		}
+	}
+
+	if actionsIdx < 0 {
+		return first, last, index, newError("action not found")
+	}
+
+	// Iterate backward from action's index, only including visible items.
+	first = index
+	for i := actionsIdx - 1; i >= 0; i-- {
+		a := l.actions[i]
+		if !a.Exclusive() {
+			break
+		}
+		if a.Visible() {
+			first--
+		}
+	}
+
+	// Iterate forward from action's index, only including visible items.
+	last = index
+	for _, a := range l.actions[actionsIdx+1:] {
+		if !a.Exclusive() {
+			break
+		}
+		last++
+	}
+
+	return first, last, index, nil
 }
 
 func (l *ActionList) Insert(index int, action *Action) error {
