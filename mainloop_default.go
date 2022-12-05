@@ -9,7 +9,7 @@ package walk
 import (
 	"unsafe"
 
-	"github.com/lxn/win"
+	"github.com/tailscale/win"
 )
 
 func (fb *FormBase) mainLoop() int {

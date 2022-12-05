@@ -9,7 +9,7 @@ package walk
 import (
 	"syscall"
 
-	"github.com/lxn/win"
+	"github.com/tailscale/win"
 )
 
 type dropFilesEventHandlerInfo struct {

@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lxn/win"
+	"github.com/tailscale/win"
 )
 
 type Image interface {

@@ -7,7 +7,7 @@
 package walk
 
 import (
-	"github.com/lxn/win"
+	"github.com/tailscale/win"
 )
 
 const tabPageWindowClass = `\o/ Walk_TabPage_Class \o/`

@@ -1,5 +1,3 @@
-github.com/tailscale/walk v0.0.0-20220506150313-ed127cfb919a h1:uptpnGzRLeSxntDX81sonfvoqxSH54COkJcX14TYWAo=
-github.com/tailscale/walk v0.0.0-20220506150313-ed127cfb919a/go.mod h1:8mDkfXFy+FtezqBBO6mTwoBpW32aetZkrZxBNrdoU3A=
 github.com/tailscale/win v0.0.0-20221118185520-e8ccca099752 h1:HEjbCnclYTqYGERu4RVMkU6cczgpzUd5TQbvT1AStbw=
 github.com/tailscale/win v0.0.0-20221118185520-e8ccca099752/go.mod h1:pW76gHd94DwbTRePyhfsevz9KvQJHBtNT7vZ+TmqBCs=
 golang.org/x/sys v0.0.0-20201018230417-eeed37f84f13/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
