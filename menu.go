@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -186,22 +187,9 @@ func (m *Menu) onActionChanged(action *Action) error {
 	}
 
 	if action.Exclusive() && action.Checked() {
-		var first, last int
-
-		index := m.actions.Index(action)
-
-		for i := index; i >= 0; i-- {
-			first = i
-			if !m.actions.At(i).Exclusive() {
-				break
-			}
-		}
-
-		for i := index; i < m.actions.Len(); i++ {
-			last = i
-			if !m.actions.At(i).Exclusive() {
-				break
-			}
+		first, last, index, err := m.actions.positionsForExclusiveCheck(action)
+		if err != nil {
+			return err
 		}
 
 		if !win.CheckMenuRadioItem(m.hMenu, uint32(first), uint32(last), uint32(index), win.MF_BYPOSITION) {

@@ -2,9 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
+
+import (
+	"github.com/tailscale/walk/idalloc"
+)
 
 type actionChangedHandler interface {
 	onActionChanged(action *Action) error
@@ -12,12 +17,9 @@ type actionChangedHandler interface {
 }
 
 var (
-	// ISSUE: When pressing enter resp. escape,
-	// WM_COMMAND with wParam=1 resp. 2 is sent.
-	// Maybe there is more to consider.
-	nextActionId    uint16 = 3
-	actionsById            = make(map[uint16]*Action)
-	shortcut2Action        = make(map[Shortcut]*Action)
+	actionIDs       = makeIDAllocator()
+	actionsById     = make(map[uint16]*Action)
+	shortcut2Action = make(map[Shortcut]*Action)
 )
 
 type Action struct {
@@ -46,16 +48,36 @@ type Action struct {
 	id                            uint16
 }
 
+func makeIDAllocator() idalloc.IDAllocator {
+	alloc := idalloc.New(1 << 16)
+	// aaron: I don't know why Walk uses menu item IDs for IDOK and IDCANCEL, but
+	// for now we need to reserve IDs up to and including IDCANCEL (2).
+	alloc.Allocate() // 0
+	alloc.Allocate() // IDOK
+	alloc.Allocate() // IDCANCEL
+	return alloc
+}
+
+func allocActionID() uint16 {
+	id, err := actionIDs.Allocate()
+	if err != nil {
+		panic(err)
+	}
+	return uint16(id)
+}
+
+func freeActionID(id uint16) {
+	actionIDs.Free(uint32(id))
+}
+
 func NewAction() *Action {
 	a := &Action{
 		enabled: true,
-		id:      nextActionId,
+		id:      allocActionID(),
 		visible: true,
 	}
 
 	actionsById[a.id] = a
-
-	nextActionId++
 
 	return a
 }
@@ -91,6 +113,7 @@ func (a *Action) release() {
 		}
 
 		delete(actionsById, a.id)
+		freeActionID(a.id)
 		delete(shortcut2Action, a.shortcut)
 	}
 }
