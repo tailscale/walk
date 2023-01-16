@@ -9,6 +9,7 @@ package walk
 
 import (
 	"github.com/tailscale/walk/idalloc"
+	"github.com/tailscale/win"
 )
 
 type actionChangedHandler interface {
@@ -48,13 +49,15 @@ type Action struct {
 	id                            uint16
 }
 
+// aaron: I don't know why Walk uses menu item IDs for IDOK and IDCANCEL, but
+// for now we need to reserve IDs up to and including IDCANCEL (2).
+const maxReservedID = win.IDCANCEL
+
 func makeIDAllocator() idalloc.IDAllocator {
 	alloc := idalloc.New(1 << 16)
-	// aaron: I don't know why Walk uses menu item IDs for IDOK and IDCANCEL, but
-	// for now we need to reserve IDs up to and including IDCANCEL (2).
-	alloc.Allocate() // 0
-	alloc.Allocate() // IDOK
-	alloc.Allocate() // IDCANCEL
+	for i := 0; i <= maxReservedID; i++ {
+		alloc.Allocate()
+	}
 	return alloc
 }
 
@@ -67,6 +70,9 @@ func allocActionID() uint16 {
 }
 
 func freeActionID(id uint16) {
+	if id <= maxReservedID {
+		return
+	}
 	actionIDs.Free(uint32(id))
 }
 
