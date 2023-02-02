@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/tailscale/win"
+	"golang.org/x/exp/constraints"
 )
 
 var (
@@ -514,22 +516,27 @@ func dpiForHDC(hdc win.HDC) int {
 }
 
 // IntFrom96DPI converts from 1/96" units to native pixels.
-func IntFrom96DPI(value, dpi int) int {
+func IntFrom96DPI[I constraints.Integer](value I, dpi int) I {
 	return scaleInt(value, float64(dpi)/96.0)
 }
 
 // IntTo96DPI converts from native pixels to 1/96" units.
-func IntTo96DPI(value, dpi int) int {
+func IntTo96DPI[I constraints.Integer](value I, dpi int) I {
 	return scaleInt(value, 96.0/float64(dpi))
 }
 
-func scaleInt(value int, scale float64) int {
-	return int(math.Round(float64(value) * scale))
+func scaleInt[I constraints.Integer](value I, scale float64) I {
+	return I(math.Round(float64(value) * scale))
 }
 
 // MarginsFrom96DPI converts from 1/96" units to native pixels.
 func MarginsFrom96DPI(value Margins, dpi int) Margins {
 	return scaleMargins(value, float64(dpi)/96.0)
+}
+
+// MARGINSFrom96DPI converts from 1/96" units to native pixels.
+func MARGINSFrom96DPI(value win.MARGINS, dpi int) win.MARGINS {
+	return scaleMARGINS(value, float64(dpi)/96.0)
 }
 
 // MarginsTo96DPI converts from native pixels to 1/96" units.
@@ -543,6 +550,15 @@ func scaleMargins(value Margins, scale float64) Margins {
 		VNear: scaleInt(value.VNear, scale),
 		HFar:  scaleInt(value.HFar, scale),
 		VFar:  scaleInt(value.VFar, scale),
+	}
+}
+
+func scaleMARGINS(value win.MARGINS, scale float64) win.MARGINS {
+	return win.MARGINS{
+		LeftWidth:    scaleInt(value.LeftWidth, scale),
+		RightWidth:   scaleInt(value.RightWidth, scale),
+		TopHeight:    scaleInt(value.TopHeight, scale),
+		BottomHeight: scaleInt(value.BottomHeight, scale),
 	}
 }
 
@@ -587,6 +603,11 @@ func SizeFrom96DPI(value Size, dpi int) Size {
 	return scaleSize(value, float64(dpi)/96.0)
 }
 
+// SIZEFrom96DPI converts from 1/96" units to native pixels.
+func SIZEFrom96DPI(value win.SIZE, dpi int) win.SIZE {
+	return scaleSIZE(value, float64(dpi)/96.0)
+}
+
 // SizeTo96DPI converts from native pixels to 1/96" units.
 func SizeTo96DPI(value Size, dpi int) Size {
 	return scaleSize(value, 96.0/float64(dpi))
@@ -597,4 +618,35 @@ func scaleSize(value Size, scale float64) Size {
 		Width:  scaleInt(value.Width, scale),
 		Height: scaleInt(value.Height, scale),
 	}
+}
+
+func scaleSIZE(value win.SIZE, scale float64) win.SIZE {
+	return win.SIZE{
+		CX: scaleInt(value.CX, scale),
+		CY: scaleInt(value.CY, scale),
+	}
+}
+
+// Max returns the largest value in values. It panics if len(values) == 0.
+func Max[O constraints.Ordered](values ...O) (ret O) {
+	ret = values[0]
+	for _, v := range values[1:] {
+		if v > ret {
+			ret = v
+		}
+	}
+
+	return ret
+}
+
+// Min returns the smallest value in values. It panics if len(values) == 0.
+func Min[O constraints.Ordered](values ...O) (ret O) {
+	ret = values[0]
+	for _, v := range values[1:] {
+		if v < ret {
+			ret = v
+		}
+	}
+
+	return ret
 }
