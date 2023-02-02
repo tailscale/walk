@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -57,11 +58,11 @@ type Canvas struct {
 	hdc                 win.HDC
 	hBmpStock           win.HBITMAP
 	window              Window
-	dpi                 int
 	bitmap              *Bitmap
 	recordingMetafile   *Metafile
 	measureTextMetafile *Metafile
-	doNotDispose        bool
+	dpi                 int
+	doNotDisposeDC      bool // When true, the Canvas does not own its hdc and should not free it
 }
 
 func NewCanvasFromImage(image Image) (*Canvas, error) {
@@ -116,7 +117,7 @@ func newCanvasFromHDC(hdc win.HDC) (*Canvas, error) {
 		return nil, newError("invalid hdc")
 	}
 
-	return (&Canvas{hdc: hdc, doNotDispose: true}).init()
+	return (&Canvas{hdc: hdc, doNotDisposeDC: true}).init()
 }
 
 func (c *Canvas) init() (*Canvas, error) {
@@ -141,7 +142,7 @@ func (c *Canvas) init() (*Canvas, error) {
 }
 
 func (c *Canvas) Dispose() {
-	if !c.doNotDispose && c.hdc != 0 {
+	if !c.doNotDisposeDC && c.hdc != 0 {
 		if c.bitmap != nil {
 			win.SelectObject(c.hdc, win.HGDIOBJ(c.hBmpStock))
 			win.DeleteDC(c.hdc)
@@ -200,6 +201,10 @@ func (c *Canvas) withFontAndTextColor(font *Font, color Color, f func() error) e
 
 		return f()
 	})
+}
+
+func (c *Canvas) withFont(font *Font, f func() error) error {
+	return c.withGdiObj(win.HGDIOBJ(font.handleForDPI(c.DPI())), f)
 }
 
 func (c *Canvas) HDC() win.HDC {
