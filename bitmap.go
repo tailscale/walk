@@ -2,18 +2,19 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
 
 import (
-	"fmt"
 	"image"
 	"image/color"
 	"math"
 	"syscall"
 	"unsafe"
 
+	"github.com/dblohm7/wingoes/com"
 	"github.com/tailscale/win"
 )
 
@@ -126,25 +127,18 @@ func NewBitmapFromFile(filePath string) (*Bitmap, error) {
 
 // NewBitmapFromFileForDPI creates new bitmap from a bitmap file at given DPI.
 func NewBitmapFromFileForDPI(filePath string, dpi int) (*Bitmap, error) {
-	var si win.GdiplusStartupInput
-	si.GdiplusVersion = 1
-	if status := win.GdiplusStartup(&si, nil); status != win.Ok {
-		return nil, newError(fmt.Sprintf("GdiplusStartup failed with status '%s'", status))
+	gbmp, err := NewGDIPlusBitmapFromFile(filePath)
+	if err != nil {
+		return nil, err
 	}
-	defer win.GdiplusShutdown()
+	defer gbmp.Dispose()
 
-	var gpBmp *win.GpBitmap
-	if status := win.GdipCreateBitmapFromFile(syscall.StringToUTF16Ptr(filePath), &gpBmp); status != win.Ok {
-		return nil, newError(fmt.Sprintf("GdipCreateBitmapFromFile failed with status '%s' for file '%s'", status, filePath))
-	}
-	defer win.GdipDisposeImage((*win.GpImage)(gpBmp))
-
-	var hBmp win.HBITMAP
-	if status := win.GdipCreateHBITMAPFromBitmap(gpBmp, &hBmp, 0); status != win.Ok {
-		return nil, newError(fmt.Sprintf("GdipCreateHBITMAPFromBitmap failed with status '%s' for file '%s'", status, filePath))
+	err = gbmp.SetDPI(dpi)
+	if err != nil {
+		return nil, err
 	}
 
-	return newBitmapFromHBITMAP(hBmp, dpi)
+	return gbmp.Bitmap()
 }
 
 // NewBitmapFromImage creates a Bitmap from image.Image at 96dpi.
@@ -231,6 +225,18 @@ func NewBitmapFromImageWithSize(image Image, size Size) (*Bitmap, error) {
 	disposables.Spare()
 
 	return bmp, nil
+}
+
+// NewBitmapFromStream creates a new Bitmap from the data contained in stream,
+// which must contain a format supported by GDI+.
+func NewBitmapFromStream(stream com.Stream) (*Bitmap, error) {
+	gpBmp, err := NewGDIPlusBitmapFromStream(stream)
+	if err != nil {
+		return nil, err
+	}
+	defer gpBmp.Dispose()
+
+	return gpBmp.Bitmap()
 }
 
 func NewBitmapFromWindow(window Window) (*Bitmap, error) {
