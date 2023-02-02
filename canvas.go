@@ -749,3 +749,8 @@ func (c *Canvas) measureAndModifyTextPixels(text string, font *Font, bounds Rect
 
 	return
 }
+
+// GDIPlus returns a new GDIPlusCanvas that renders into the same target as c.
+func (c *Canvas) GDIPlus() (*GDIPlusCanvas, error) {
+	return newGDIPlusCanvas(c)
+}
