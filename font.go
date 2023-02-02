@@ -8,6 +8,7 @@ package walk
 
 import (
 	"syscall"
+	"unsafe"
 )
 
 import (
@@ -213,6 +214,21 @@ func (f *Font) Underline() bool {
 // PointSize returns the size of the Font in point units.
 func (f *Font) PointSize() int {
 	return f.pointSize
+}
+
+// LOGFONTforDPI returns a GDI LOGFONT for f at the specified dpi.
+func (f *Font) LOGFONTForDPI(dpi int) *win.LOGFONT {
+	hfont := f.handleForDPI(dpi)
+	if hfont == 0 {
+		return nil
+	}
+
+	var lf win.LOGFONT
+	if win.GetObject(win.HGDIOBJ(hfont), unsafe.Sizeof(lf), unsafe.Pointer(&lf)) == 0 {
+		return nil
+	}
+
+	return &lf
 }
 
 func screenDPI() int {
