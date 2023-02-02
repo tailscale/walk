@@ -239,3 +239,26 @@ func (l *ActionList) updateSeparatorVisibility() error {
 
 	return nil
 }
+
+// forEach iterates through each action in l, calling f for each one. If f
+// returns false, the iteration is aborted.
+func (l *ActionList) forEach(f func(*Action) bool) {
+	for _, a := range l.actions {
+		if !f(a) {
+			break
+		}
+	}
+}
+
+// forEach iterates through each action in l, calling f for each visible action.
+// If f returns false, the iteration is aborted.
+func (l *ActionList) forEachVisible(f func(*Action) bool) {
+	for _, a := range l.actions {
+		if !a.Visible() {
+			continue
+		}
+		if !f(a) {
+			break
+		}
+	}
+}
