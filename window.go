@@ -1047,6 +1047,11 @@ func (wb *WindowBase) IntFrom96DPI(value int) int {
 	return IntFrom96DPI(value, wb.DPI())
 }
 
+// Int32From96DPI converts from 1/96" units to native pixels.
+func (wb *WindowBase) Int32From96DPI(value int32) int32 {
+	return IntFrom96DPI(value, wb.DPI())
+}
+
 // IntTo96DPI converts from native pixels to 1/96" units.
 func (wb *WindowBase) IntTo96DPI(value int) int {
 	return IntTo96DPI(value, wb.DPI())
@@ -1055,6 +1060,11 @@ func (wb *WindowBase) IntTo96DPI(value int) int {
 // MarginsFrom96DPI converts from 1/96" units to native pixels.
 func (wb *WindowBase) MarginsFrom96DPI(value Margins) Margins {
 	return MarginsFrom96DPI(value, wb.DPI())
+}
+
+// MARGINSFrom96DPI converts from 1/96" units to native pixels.
+func (wb *WindowBase) MARGINSFrom96DPI(value win.MARGINS) win.MARGINS {
+	return MARGINSFrom96DPI(value, wb.DPI())
 }
 
 // MarginsTo96DPI converts from native pixels to 1/96" units.

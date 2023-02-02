@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -18,6 +19,11 @@ type Rectangle struct {
 
 func (r Rectangle) IsZero() bool {
 	return r.X == 0 && r.Y == 0 && r.Width == 0 && r.Height == 0
+}
+
+// RectangleFromRECT converts r from a win.RECT to a Rectangle.
+func RectangleFromRECT(r win.RECT) Rectangle {
+	return rectangleFromRECT(r)
 }
 
 func rectangleFromRECT(r win.RECT) Rectangle {
