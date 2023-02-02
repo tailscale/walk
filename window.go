@@ -354,6 +354,12 @@ type Window interface {
 	// goroutine from inside a message loop.
 	Synchronize(f func())
 
+	// ThemeForClass obtains the theme associated with this Window whose class is
+	// themeClass. themeClass must consist of one or more theme class names,
+	// separated by semicolons. Default theme classes are provided by the VSCLASS_*
+	// constants in the win package.
+	ThemeForClass(themeClass string) (*Theme, error)
+
 	// Visible returns if the Window is visible.
 	Visible() bool
 
@@ -442,6 +448,7 @@ type WindowBase struct {
 	visible                   bool
 	enabled                   bool
 	acc                       *Accessibility
+	themes                    map[string]*Theme
 	// onHelp is the possibly nil func passed to WindowBase.SetHelp.
 	onHelp func(hwnd win.HWND, wb *WindowBase, hi *win.HELPINFO) (handled bool)
 }
@@ -569,6 +576,7 @@ func initWindowWithCfg(cfg *windowCfg) error {
 	wb.visible = cfg.Style&win.WS_VISIBLE != 0
 	wb.calcTextSizeInfo2TextSize = make(map[calcTextSizeInfo]Size)
 	wb.name2Property = make(map[string]Property)
+	wb.themes = make(map[string]*Theme)
 
 	var hwndParent win.HWND
 	var hMenu win.HMENU
@@ -912,6 +920,10 @@ func (wb *WindowBase) Dispose() {
 
 	for _, p := range wb.name2Property {
 		p.SetSource(nil)
+	}
+
+	for _, t := range wb.themes {
+		t.close()
 	}
 
 	if hWnd != 0 {
@@ -2102,6 +2114,24 @@ func (wb *WindowBase) Synchronize(f func()) {
 	win.PostMessage(wb.hWnd, syncMsgId, 0, 0)
 }
 
+// ThemeForClass obtains the theme associated with this Window whose class is
+// themeClass. themeClass must consist of one or more theme class names,
+// separated by semicolons. Default theme classes are provided by the VSCLASS_*
+// constants in the win package.
+func (wb *WindowBase) ThemeForClass(themeClass string) (*Theme, error) {
+	if t, ok := wb.themes[themeClass]; ok {
+		return t, nil
+	}
+
+	t, err := openTheme(wb, themeClass)
+	if err != nil {
+		return t, err
+	}
+
+	wb.themes[themeClass] = t
+	return t, nil
+}
+
 // synchronizeLayout causes the given layout computations to be applied
 // later by the message loop running on the group's thread.
 //
@@ -2512,7 +2542,14 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 			return 0
 		}
 
-	case win.WM_THEMECHANGED:
+	case win.WM_SETTINGCHANGE, win.WM_THEMECHANGED:
+		// Destroy any cached theme information. The new information will be
+		// reloaded lazily.
+		for _, v := range wb.themes {
+			v.close()
+		}
+		wb.themes = make(map[string]*Theme)
+
 		wb.window.(ApplySysColorser).ApplySysColors()
 
 	case win.WM_DESTROY:
