@@ -17,6 +17,13 @@ type actionChangedHandler interface {
 	onActionVisibleChanged(action *Action) error
 }
 
+// ActionOwnerDrawHandler must be implemented by any struct that wants to
+// provide measurement and drawing for owner-drawn menu items.
+type ActionOwnerDrawHandler interface {
+	OnMeasure(action *Action, mctx *MenuItemMeasureContext) (widthPixels, heightPixels uint32)
+	OnDraw(action *Action, dctx *MenuItemDrawContext)
+}
+
 var (
 	actionIDs       = makeIDAllocator()
 	actionsById     = make(map[uint16]*Action)
@@ -47,6 +54,7 @@ type Action struct {
 	defawlt                       bool
 	exclusive                     bool
 	id                            uint16
+	ownerDrawInfo                 *ownerDrawnMenuItemInfo
 }
 
 // aaron: I don't know why Walk uses menu item IDs for IDOK and IDCANCEL, but
@@ -116,6 +124,11 @@ func (a *Action) release() {
 		if a.menu != nil {
 			a.menu.actions.Clear()
 			a.menu.Dispose()
+		}
+
+		if a.ownerDrawInfo != nil {
+			a.ownerDrawInfo.Dispose()
+			a.ownerDrawInfo = nil
 		}
 
 		delete(actionsById, a.id)
@@ -414,6 +427,34 @@ func (a *Action) SetToolTip(value string) (err error) {
 	}
 
 	return
+}
+
+// SetOwnerDraw converts a into an owner-drawn action whose measurement and
+// drawing is carried out by handler.
+func (a *Action) SetOwnerDraw(handler ActionOwnerDrawHandler) {
+	if a.ownerDrawInfo == nil && handler == nil {
+		// No change
+		return
+	}
+
+	if a.ownerDrawInfo != nil {
+		if a.ownerDrawInfo.handler == handler {
+			// No change
+			return
+		}
+
+		a.ownerDrawInfo.Dispose()
+		a.ownerDrawInfo = nil
+	}
+
+	if handler != nil {
+		a.ownerDrawInfo = newOwnerDrawnMenuItemInfo(a, handler)
+	}
+}
+
+// OwnerDraw returns true when a has a handler registered for owner drawing.
+func (a *Action) OwnerDraw() bool {
+	return a.ownerDrawInfo != nil
 }
 
 func (a *Action) Visible() bool {
