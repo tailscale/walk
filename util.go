@@ -650,3 +650,8 @@ func Min[O constraints.Ordered](values ...O) (ret O) {
 
 	return ret
 }
+
+func ptInRect(pt win.POINT, rect win.RECT) bool {
+	// win.RECT Left and Top are inclusive, Right and Bottom are exclusive
+	return pt.X >= rect.Left && pt.X < rect.Right && pt.Y >= rect.Top && pt.Y < rect.Bottom
+}

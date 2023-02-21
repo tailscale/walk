@@ -16,47 +16,44 @@ import (
 	"github.com/tailscale/win"
 )
 
-var notifyIcons = make(map[*NotifyIcon]bool)
+var (
+	notifyIcons   = map[*NotifyIcon]struct{}{}
+	notifyIconIDs = map[uint16]*NotifyIcon{}
+)
 
 func notifyIconWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) (result uintptr) {
-	// Retrieve our *NotifyIcon from the message window.
-	ptr := win.GetWindowLongPtr(hwnd, win.GWLP_USERDATA)
-	ni := (*NotifyIcon)(unsafe.Pointer(ptr))
+	ni := notifyIconIDs[win.HIWORD(uint32(lParam))]
+	if ni == nil {
+		return win.DefWindowProc(hwnd, msg, wParam, lParam)
+	}
 
-	switch lParam {
+	switch win.LOWORD(uint32(lParam)) {
 	case win.WM_LBUTTONDOWN:
-		ni.publishMouseEvent(&ni.mouseDownPublisher, LeftButton)
+		ni.mouseDownPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), LeftButton)
 
 	case win.WM_LBUTTONUP:
-		ni.publishMouseEvent(&ni.mouseUpPublisher, LeftButton)
+		ni.mouseUpPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), LeftButton)
 
 	case win.WM_RBUTTONDOWN:
-		ni.publishMouseEvent(&ni.mouseDownPublisher, RightButton)
+		ni.mouseDownPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), RightButton)
 
 	case win.WM_RBUTTONUP:
-		ni.publishMouseEvent(&ni.mouseUpPublisher, RightButton)
-
-		win.SendMessage(hwnd, msg, wParam, win.WM_CONTEXTMENU)
+		ni.mouseUpPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), RightButton)
 
 	case win.WM_CONTEXTMENU:
-		if ni.contextMenu.Actions().Len() == 0 {
+		if !ni.showContextMenuPublisher.Publish() || ni.contextMenu.Actions().Len() == 0 {
 			break
 		}
 
 		win.SetForegroundWindow(hwnd)
-
-		var p win.POINT
-		if !win.GetCursorPos(&p) {
-			lastError("GetCursorPos")
-		}
 
 		ni.applyDPI()
 
 		actionId := uint16(win.TrackPopupMenuEx(
 			ni.contextMenu.hMenu,
 			win.TPM_NOANIMATION|win.TPM_RETURNCMD,
-			p.X,
-			p.Y,
+			win.GET_X_LPARAM(wParam),
+			win.GET_Y_LPARAM(wParam),
 			hwnd,
 			nil))
 		if actionId != 0 {
@@ -67,6 +64,7 @@ func notifyIconWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) (resul
 
 		return 0
 	case win.NIN_BALLOONUSERCLICK:
+		ni.reEnableToolTip()
 		ni.messageClickedPublisher.Publish()
 	}
 
@@ -136,11 +134,19 @@ func (i *shellNotificationIcon) newCmd(op uint32) *niCmd {
 		return nil
 	}
 
-	cmd := niCmd{shellIcon: i, op: op, nid: win.NOTIFYICONDATA{HWnd: i.hWnd}}
+	cmd := niCmd{
+		shellIcon: i,
+		op:        op,
+		nid: win.NOTIFYICONDATA{
+			HWnd:   i.hWnd,
+			UFlags: win.NIF_SHOWTIP,
+		},
+	}
 	cmd.nid.CbSize = uint32(unsafe.Sizeof(cmd.nid))
 	if i.id != nil {
 		cmd.nid.UID = *(i.id)
 	}
+
 	return &cmd
 }
 
@@ -170,12 +176,23 @@ func (cmd *niCmd) setBalloonInfo(title, info string, icon interface{}) error {
 	}
 
 	cmd.nid.UFlags |= win.NIF_INFO
+	// An empty SzInfo buffer implies that we're tearing down (popping?) the
+	// balloon. On the other hand, a non-empty SzInfo means that we're showing the
+	// balloon and need to hide ToolTips.
+	if cmd.nid.SzInfo[0] != 0 {
+		// Hide the ToolTip so that it doesn't overlap with the balloon.
+		cmd.hideToolTip()
+	}
 	return nil
 }
 
 func (cmd *niCmd) setIcon(icon win.HICON) {
 	cmd.nid.HIcon = icon
 	cmd.nid.UFlags |= win.NIF_ICON
+}
+
+func (cmd *niCmd) hideToolTip() {
+	cmd.nid.UFlags &= ^uint32(win.NIF_SHOWTIP)
 }
 
 func (cmd *niCmd) setToolTip(tt string) error {
@@ -217,22 +234,23 @@ func (cmd *niCmd) execute() error {
 	// When executing an add, we also need to do a NIM_SETVERSION.
 	verCmd := *cmd
 	verCmd.op = win.NIM_SETVERSION
-	// We want XP-compatible message behavior.
-	verCmd.nid.UVersion = win.NOTIFYICON_VERSION
+	// Use Vista+ behaviour.
+	verCmd.nid.UVersion = win.NOTIFYICON_VERSION_4
 	return verCmd.execute()
 }
 
 // NotifyIcon represents an icon in the taskbar notification area.
 type NotifyIcon struct {
-	shellIcon               *shellNotificationIcon
-	lastDPI                 int
-	contextMenu             *Menu
-	icon                    Image
-	toolTip                 string
-	visible                 bool
-	mouseDownPublisher      MouseEventPublisher
-	mouseUpPublisher        MouseEventPublisher
-	messageClickedPublisher EventPublisher
+	shellIcon                *shellNotificationIcon
+	lastDPI                  int
+	contextMenu              *Menu
+	icon                     Image
+	toolTip                  string
+	visible                  bool
+	mouseDownPublisher       MouseEventPublisher
+	mouseUpPublisher         MouseEventPublisher
+	messageClickedPublisher  EventPublisher
+	showContextMenuPublisher ProceedEventPublisher
 }
 
 // NewNotifyIcon creates and returns a new NotifyIcon.
@@ -259,10 +277,11 @@ func NewNotifyIcon(form Form) (*NotifyIcon, error) {
 
 	menu.getDPI = ni.DPI
 
-	// Set our *NotifyIcon as user data for the message window.
-	win.SetWindowLongPtr(fb.hWnd, win.GWLP_USERDATA, uintptr(unsafe.Pointer(ni)))
+	notifyIcons[ni] = struct{}{}
+	if ni.shellIcon.id != nil {
+		notifyIconIDs[uint16(*(ni.shellIcon.id))] = ni
+	}
 
-	notifyIcons[ni] = true
 	return ni, nil
 }
 
@@ -275,13 +294,36 @@ func (ni *NotifyIcon) isDefunct() bool {
 	return ni.shellIcon.hWnd == 0
 }
 
-func (ni *NotifyIcon) readdToTaskbar() error {
+func (ni *NotifyIcon) reAddToTaskbar() error {
+	// The ID is no longer valid. We'll get a new one via the NIM_ADD command.
+	ni.shellIcon.id = nil
+
 	cmd := ni.shellIcon.newCmd(win.NIM_ADD)
 	cmd.setCallbackMessage(notifyIconMessageId)
 	cmd.setVisible(ni.visible)
 	cmd.setIcon(ni.getHICON(ni.icon))
 	if err := cmd.setToolTip(ni.toolTip); err != nil {
 		return err
+	}
+
+	if err := cmd.execute(); err != nil {
+		return err
+	}
+
+	if ni.shellIcon.id != nil {
+		// Add the new ID
+		notifyIconIDs[uint16(*(ni.shellIcon.id))] = ni
+	}
+
+	return nil
+}
+
+func (ni *NotifyIcon) reEnableToolTip() error {
+	// newCmd always returns a command that, by default, enables ToolTips.
+	// All we need to do is create a modify command and execute it.
+	cmd := ni.shellIcon.newCmd(win.NIM_MODIFY)
+	if cmd == nil {
+		return nil
 	}
 
 	return cmd.execute()
@@ -310,12 +352,22 @@ func (ni *NotifyIcon) applyDPI() {
 //
 // The associated Icon is not disposed of.
 func (ni *NotifyIcon) Dispose() error {
-	delete(notifyIcons, ni)
 	if ni.isDefunct() {
 		return nil
 	}
 
-	return ni.shellIcon.Dispose()
+	// Save the ID now since ni.shellIcon.Dispose() will clear it.
+	nid := ni.shellIcon.id
+	if err := ni.shellIcon.Dispose(); err != nil {
+		return err
+	}
+
+	delete(notifyIcons, ni)
+	if nid != nil {
+		delete(notifyIconIDs, uint16(*nid))
+	}
+
+	return nil
 }
 
 func (ni *NotifyIcon) getHICON(icon Image) win.HICON {
@@ -466,15 +518,6 @@ func (ni *NotifyIcon) SetVisible(visible bool) error {
 	return nil
 }
 
-func (ni *NotifyIcon) publishMouseEvent(publisher *MouseEventPublisher, button MouseButton) {
-	var p win.POINT
-	if !win.GetCursorPos(&p) {
-		lastError("GetCursorPos")
-	}
-
-	publisher.Publish(int(p.X), int(p.Y), button)
-}
-
 // MouseDown returns the event that is published when a mouse button is pressed
 // while the cursor is over the NotifyIcon.
 func (ni *NotifyIcon) MouseDown() *MouseEvent {
@@ -491,4 +534,11 @@ func (ni *NotifyIcon) MouseUp() *MouseEvent {
 // one of its iconed variants.
 func (ni *NotifyIcon) MessageClicked() *Event {
 	return ni.messageClickedPublisher.Event()
+}
+
+// ShowContextMenu returns the event that is published when ni's context menu
+// is going to be shown. Its handlers may return false to prevent the
+// context menu from being shown.
+func (ni *NotifyIcon) ShowContextMenu() *ProceedEvent {
+	return ni.showContextMenuPublisher.Event()
 }

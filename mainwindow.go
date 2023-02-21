@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -241,9 +242,6 @@ func (mw *MainWindow) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 		if mw.statusBar.BoundsPixels() != bounds {
 			mw.statusBar.SetBoundsPixels(bounds)
 		}
-
-	case win.WM_INITMENUPOPUP:
-		mw.menu.updateItemsWithImageForWindow(mw)
 	}
 
 	return mw.FormBase.WndProc(hwnd, msg, wParam, lParam)
