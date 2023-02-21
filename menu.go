@@ -21,6 +21,8 @@ type Menu struct {
 	actions            *ActionList
 	getDPI             func() int
 	initPopupPublisher EventPublisher
+	sharedMetrics      *menuSharedMetrics  // shared theme metrics across all menus associated with the current window
+	perMenuMetrics     menuSpecificMetrics // per-menu metrics
 }
 
 func newMenuBar(window Window) (menu *Menu, _ error) {
@@ -129,6 +131,7 @@ func (m *Menu) IsDisposed() bool {
 // window specifies the parent Window for which the menu is to be shown.
 func (m *Menu) onInitPopup(window Window) {
 	m.initPopupPublisher.Publish()
+	m.perMenuMetrics.reset()
 	m.updateItemsForWindow(window)
 }
 
@@ -144,36 +147,88 @@ func (m *Menu) updateItemsForWindow(window Window) {
 		}()
 	}
 
+	var needAccelSpace bool
+	var numOwnerDraw int
+	var sm *menuSharedMetrics
+
 	for _, action := range m.actions.actions {
-		if action.image != nil {
+		needAccelSpace = needAccelSpace || action.shortcut.Key != 0
+		switch {
+		case action.ownerDrawInfo != nil:
+			if numOwnerDraw == 0 {
+				// We've encountered the first owner-drawn item in the menu. Obtain
+				// shared metrics from the window theme.
+				sm = window.AsWindowBase().menuSharedMetrics()
+			}
+			action.ownerDrawInfo.sharedMetrics = sm
+			action.ownerDrawInfo.perMenuMetrics = &m.perMenuMetrics
+			numOwnerDraw++
+			fallthrough
+		case action.image != nil:
 			m.onActionChanged(action)
-		}
-		if action.menu != nil {
+		case action.menu != nil:
 			action.menu.updateItemsForWindow(window)
 		}
+	}
+
+	if numOwnerDraw > 0 && (needAccelSpace || numOwnerDraw < len(m.actions.actions)) {
+		// If we need accelerator space, then we need to measure each item's
+		// shortcut text.
+		// If we have any owner-drawn items, any remaining actions that are not
+		// owner-drawn must be set to owner-drawn via DefaultOwnerDrawHandler.
+		// Failure to do so would result in non-owner-drawn items being rendered
+		// without any theming whatsoever.
+		m.actions.forEach(func(a *Action) bool {
+			if needAccelSpace {
+				defer m.perMenuMetrics.measureAccelTextExtent(window, a)
+			}
+			if a.OwnerDraw() {
+				return true
+			}
+			a.ownerDrawInfo = newOwnerDrawnMenuItemInfo(a, DefaultOwnerDrawHandler)
+			a.ownerDrawInfo.sharedMetrics = sm
+			a.ownerDrawInfo.perMenuMetrics = &m.perMenuMetrics
+			m.onActionChanged(a)
+			return true
+		})
+	}
+}
+
+func (m *Menu) resolveDPI() int {
+	switch {
+	case m.getDPI != nil:
+		return m.getDPI()
+	case m.window != nil:
+		return m.window.DPI()
+	default:
+		return screenDPI()
 	}
 }
 
 func (m *Menu) initMenuItemInfoFromAction(mii *win.MENUITEMINFO, action *Action) {
 	mii.CbSize = uint32(unsafe.Sizeof(*mii))
-	mii.FMask = win.MIIM_FTYPE | win.MIIM_ID | win.MIIM_STATE | win.MIIM_STRING
-	if action.image != nil {
+	mii.FMask = win.MIIM_FTYPE | win.MIIM_ID | win.MIIM_STATE
+
+	switch {
+	case action.ownerDrawInfo != nil:
+		mii.FType |= win.MFT_OWNERDRAW
+		// Setting DwItemData to the pointer to our ownerDrawInfo enables
+		// (*WindowBase).WndProc to quickly resolve the menu item being drawn.
+		mii.FMask |= win.MIIM_DATA
+		mii.DwItemData = uintptr(unsafe.Pointer(action.ownerDrawInfo))
+	case action.image != nil:
 		mii.FMask |= win.MIIM_BITMAP
-		dpi := 96
-		if m.getDPI != nil {
-			dpi = m.getDPI()
-		} else if m.window != nil {
-			dpi = m.window.DPI()
-		} else {
-			dpi = screenDPI()
-		}
+		dpi := m.resolveDPI()
 		if bmp, err := iconCache.Bitmap(action.image, dpi); err == nil {
 			mii.HbmpItem = bmp.hBmp
 		}
-	}
-	if action.IsSeparator() {
+	case action.IsSeparator():
 		mii.FType |= win.MFT_SEPARATOR
-	} else {
+	default:
+	}
+
+	if !action.IsSeparator() {
+		mii.FMask |= win.MIIM_STRING
 		mii.FType |= win.MFT_STRING
 		var text string
 		if s := action.shortcut; s.Key != 0 {
@@ -181,9 +236,11 @@ func (m *Menu) initMenuItemInfoFromAction(mii *win.MENUITEMINFO, action *Action)
 		} else {
 			text = action.text
 		}
-		mii.DwTypeData = syscall.StringToUTF16Ptr(text)
-		mii.Cch = uint32(len([]rune(action.text)))
+		textUTF16 := syscall.StringToUTF16(text)
+		mii.DwTypeData = &textUTF16[0]
+		mii.Cch = uint32(len(textUTF16))
 	}
+
 	mii.WID = uint32(action.id)
 
 	if action.Enabled() {
@@ -192,9 +249,6 @@ func (m *Menu) initMenuItemInfoFromAction(mii *win.MENUITEMINFO, action *Action)
 		mii.FState |= win.MFS_DISABLED
 	}
 
-	if action.Checkable() {
-		mii.FMask |= win.MIIM_CHECKMARKS
-	}
 	if action.Checked() {
 		mii.FState |= win.MFS_CHECKED
 	}
@@ -348,4 +402,22 @@ func (m *Menu) onClearingActions() error {
 	}
 
 	return nil
+}
+
+// onMnemonic is called when m contains owner-drawn items and its parent Window
+// receives a keypress. It enumerates all visible menu items, and if a match is
+// found, it returns an action code telling Windows to execute the item specifed
+// by positional index.
+func (m *Menu) onMnemonic(key Key) (index, action uint16) {
+	m.actions.forEachVisible(func(a *Action) bool {
+		if aKey := a.ownerDrawInfo.mnemonic; aKey != 0 && aKey == key {
+			action = win.MNC_EXECUTE
+			return false
+		}
+
+		index++
+		return true
+	})
+
+	return index, action
 }

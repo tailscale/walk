@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/tailscale/walk/dpicache"
 	"github.com/tailscale/win"
 )
 
@@ -449,6 +450,7 @@ type WindowBase struct {
 	enabled                   bool
 	acc                       *Accessibility
 	themes                    map[string]*Theme
+	menuSharedMetrics96DPI    *menuSharedMetrics
 	// onHelp is the possibly nil func passed to WindowBase.SetHelp.
 	onHelp func(hwnd win.HWND, wb *WindowBase, hi *win.HELPINFO) (handled bool)
 }
@@ -2370,6 +2372,15 @@ func (wb *WindowBase) handleWMCTLCOLOR(wParam, lParam uintptr) uintptr {
 	return 0
 }
 
+// menuSharedMetrics obtains menuSharedMetrics associated with wb, scaled to
+// wb's current DPI.
+func (wb *WindowBase) menuSharedMetrics() *menuSharedMetrics {
+	if wb.menuSharedMetrics96DPI == nil {
+		wb.menuSharedMetrics96DPI = newMenuSharedMetrics(wb)
+	}
+	return dpicache.InstanceForDPI(wb.menuSharedMetrics96DPI, wb.DPI())
+}
+
 // WndProc is the window procedure of the window.
 //
 // When implementing your own WndProc to add or modify behavior, call the
@@ -2546,9 +2557,37 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 			return 0
 		}
 
+	case win.WM_MENUCHAR:
+		if m := resolveMenu(win.HMENU(lParam)); m != nil {
+			index, action := m.onMnemonic(Key(wParam & 0xFFFF))
+			return uintptr(win.MAKELONG(index, action))
+		}
+
+	case win.WM_MEASUREITEM:
+		if mis := (*win.MEASUREITEMSTRUCT)(unsafe.Pointer(lParam)); wParam == 0 && mis.CtlType == win.ODT_MENU {
+			if odm := (*ownerDrawnMenuItemInfo)(unsafe.Pointer(mis.ItemData)); odm != nil {
+				odm.onMeasure(wb, mis)
+				return 1 // TRUE
+			}
+		}
+
+	case win.WM_DRAWITEM:
+		if dis := (*win.DRAWITEMSTRUCT)(unsafe.Pointer(lParam)); wParam == 0 && dis.CtlType == win.ODT_MENU {
+			if odm := (*ownerDrawnMenuItemInfo)(unsafe.Pointer(dis.ItemData)); odm != nil {
+				odm.onDraw(wb, dis)
+				return 1 // TRUE
+			}
+		}
+
 	case win.WM_SETTINGCHANGE, win.WM_THEMECHANGED:
 		// Destroy any cached theme information. The new information will be
 		// reloaded lazily.
+
+		if wb.menuSharedMetrics96DPI != nil {
+			dpicache.Delete(wb.menuSharedMetrics96DPI)
+			wb.menuSharedMetrics96DPI = nil
+		}
+
 		for _, v := range wb.themes {
 			v.close()
 		}
