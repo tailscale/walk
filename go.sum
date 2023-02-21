@@ -1,7 +1,7 @@
 github.com/dblohm7/wingoes v0.0.0-20230131214643-2b26ab7fb5f9 h1:BHpX4mgaPLK+6K0ByiQ3fJH9ZrwmHfPJWPIO3et9j6g=
 github.com/dblohm7/wingoes v0.0.0-20230131214643-2b26ab7fb5f9/go.mod h1:54MIJVGBIdbHuav7/YRAAhRxZvpEV9Z9p6jCKPLJ2lw=
-github.com/tailscale/win v0.0.0-20230202211146-fd21cc0d8ef1 h1:Qzkl7Vs652OThl9rrvKt+a0mLXoGA/qVzXQIHL7XY4Q=
-github.com/tailscale/win v0.0.0-20230202211146-fd21cc0d8ef1/go.mod h1:oDwVI4EaMwxWuFslkViCEla7dT7IahdN3SKrpo7g6R0=
+github.com/tailscale/win v0.0.0-20230210225258-ad93eed16885 h1:3aDepVQXknGFOsH3fk3O4ua0+Wh3VkUv+lrqJ0SHd+8=
+github.com/tailscale/win v0.0.0-20230210225258-ad93eed16885/go.mod h1:oDwVI4EaMwxWuFslkViCEla7dT7IahdN3SKrpo7g6R0=
 golang.org/x/exp v0.0.0-20230127140709-cafedaf64729 h1:H2kBA039yqxDv2DScpuC0knhZXO6Evfmt7mN8sGMh/4=
 golang.org/x/exp v0.0.0-20230127140709-cafedaf64729/go.mod h1:CxIveKay+FTh1D0yPZemJVgC/95VzuuOLq5Qi4xnoYc=
 golang.org/x/sys v0.4.0 h1:Zr2JFtRQNX3BCZ8YtxRE9hNJYC8J6I1MVbMg6owUp18=

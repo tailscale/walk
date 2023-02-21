@@ -2496,8 +2496,6 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 				y = int32(pt.Y)
 			}
 
-			contextMenu.updateItemsWithImageForWindow(wb.window)
-
 			win.TrackPopupMenuEx(
 				contextMenu.hMenu,
 				win.TPM_NOANIMATION,
@@ -2539,6 +2537,12 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 		wb.boundsChangedPublisher.Publish()
 
 		if nws, ok := wb.window.(interface{ NeedsWmSize() bool }); !ok || !nws.NeedsWmSize() {
+			return 0
+		}
+
+	case win.WM_INITMENUPOPUP:
+		if m := resolveMenu(win.HMENU(wParam)); m != nil {
+			m.onInitPopup(wb)
 			return 0
 		}
 

@@ -16,53 +16,100 @@ import (
 )
 
 type Menu struct {
-	hMenu   win.HMENU
-	window  Window
-	actions *ActionList
-	getDPI  func() int
+	hMenu              win.HMENU
+	window             Window
+	actions            *ActionList
+	getDPI             func() int
+	initPopupPublisher EventPublisher
 }
 
-func newMenuBar(window Window) (*Menu, error) {
+func newMenuBar(window Window) (menu *Menu, _ error) {
 	hMenu := win.CreateMenu()
 	if hMenu == 0 {
 		return nil, lastError("CreateMenu")
 	}
+	defer func() {
+		if menu == nil {
+			win.DestroyMenu(hMenu)
+		}
+	}()
 
 	m := &Menu{
 		hMenu:  hMenu,
 		window: window,
 	}
-	m.actions = newActionList(m)
 
-	return m, nil
+	// For resolveMenu to work, we must set DwMenuData to m.
+	mi := win.MENUINFO{
+		FMask:      win.MIM_MENUDATA,
+		DwMenuData: uintptr(unsafe.Pointer(m)),
+	}
+	mi.CbSize = uint32(unsafe.Sizeof(mi))
+
+	if !win.SetMenuInfo(hMenu, &mi) {
+		return nil, lastError("SetMenuInfo")
+	}
+
+	m.actions = newActionList(m)
+	menu = m
+
+	return menu, nil
 }
 
-func NewMenu() (*Menu, error) {
+func NewMenu() (menu *Menu, _ error) {
 	hMenu := win.CreatePopupMenu()
 	if hMenu == 0 {
 		return nil, lastError("CreatePopupMenu")
 	}
+	defer func() {
+		if menu == nil {
+			win.DestroyMenu(hMenu)
+		}
+	}()
 
-	var mi win.MENUINFO
+	mi := win.MENUINFO{FMask: win.MIM_STYLE}
 	mi.CbSize = uint32(unsafe.Sizeof(mi))
 
 	if !win.GetMenuInfo(hMenu, &mi) {
 		return nil, lastError("GetMenuInfo")
 	}
 
-	mi.FMask |= win.MIM_STYLE
-	mi.DwStyle = win.MNS_CHECKORBMP
+	mi.DwStyle |= win.MNS_CHECKORBMP
+	mi.DwStyle &= ^uint32(win.MNS_NOCHECK)
+
+	m := &Menu{
+		hMenu: hMenu,
+	}
+
+	// For resolveMenu to work, we must set DwMenuData to m.
+	mi.FMask |= win.MIM_MENUDATA
+	mi.DwMenuData = uintptr(unsafe.Pointer(m))
 
 	if !win.SetMenuInfo(hMenu, &mi) {
 		return nil, lastError("SetMenuInfo")
 	}
 
-	m := &Menu{
-		hMenu: hMenu,
-	}
 	m.actions = newActionList(m)
+	menu = m
 
-	return m, nil
+	return menu, nil
+}
+
+// resolveMenu resolves a Walk Menu from an hmenu.
+func resolveMenu(hmenu win.HMENU) *Menu {
+	mi := win.MENUINFO{FMask: win.MIM_MENUDATA}
+	mi.CbSize = uint32(unsafe.Sizeof(mi))
+	if !win.GetMenuInfo(hmenu, &mi) {
+		return nil
+	}
+
+	return (*Menu)(unsafe.Pointer(mi.DwMenuData))
+}
+
+// InitPopup returns the event that is published when m is about to be displayed
+// as a popup menu.
+func (m *Menu) InitPopup() *Event {
+	return m.initPopupPublisher.Event()
 }
 
 func (m *Menu) Dispose() {
@@ -78,11 +125,18 @@ func (m *Menu) IsDisposed() bool {
 	return m.hMenu == 0
 }
 
+// onInitPopup is invoked whenever m is about to be displayed as a popup menu.
+// window specifies the parent Window for which the menu is to be shown.
+func (m *Menu) onInitPopup(window Window) {
+	m.initPopupPublisher.Publish()
+	m.updateItemsForWindow(window)
+}
+
 func (m *Menu) Actions() *ActionList {
 	return m.actions
 }
 
-func (m *Menu) updateItemsWithImageForWindow(window Window) {
+func (m *Menu) updateItemsForWindow(window Window) {
 	if m.window == nil {
 		m.window = window
 		defer func() {
@@ -95,7 +149,7 @@ func (m *Menu) updateItemsWithImageForWindow(window Window) {
 			m.onActionChanged(action)
 		}
 		if action.menu != nil {
-			action.menu.updateItemsWithImageForWindow(window)
+			action.menu.updateItemsForWindow(window)
 		}
 	}
 }
