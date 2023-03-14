@@ -22,7 +22,6 @@ var DefaultOwnerDrawHandler defaultOwnerDrawHandler
 // MenuItemMeasureContext is the data passed into an ActionOwnerDrawHandler's
 // OnMeasure method to facilitate measurement of an owner-draw menu item.
 type MenuItemMeasureContext struct {
-	DPI        int
 	Theme      *Theme
 	Window     Window
 	Canvas     *Canvas
@@ -287,9 +286,10 @@ func (ml *menuItemLayout) measure(w Window, odi *ownerDrawnMenuItemInfo) (uint32
 	}
 	defer canvas.Dispose()
 
+	canvas.dpi = odi.resolveDPI()
+
 	// Ask the ActionOwnerDrawHandler for its custom content's measurements.
 	mctx := MenuItemMeasureContext{
-		DPI:        odi.resolveDPI(),
 		Theme:      theme,
 		Window:     w,
 		Canvas:     canvas,
@@ -469,7 +469,7 @@ func stripMnemonic(textUTF16 []uint16) (newMnemonic Key, _ []uint16) {
 			// Convert the UTF-16 code unit into a virtual key code.
 			vkInfo := win.VkKeyScan(p)
 			if vkInfo != -1 {
-				// The virtual key code is in lower byte of vkInfo.
+				// The virtual key code is in the lower byte of vkInfo.
 				newMnemonic = Key(vkInfo & 0xFF)
 			}
 		} else if p == '&' {
@@ -516,8 +516,8 @@ func addMargins(sz *win.SIZE, m win.MARGINS) {
 }
 
 // stripMargins adjusts the bounding box specified by r by removing the margins
-// specified by m. The resulting bounding box is centered within the initial
-// bounding box.
+// specified by m. The resulting bounding box is offset within the initial
+// bounding box by the left and top margins.
 func stripMargins(r *win.RECT, m win.MARGINS) {
 	r.Left += m.LeftWidth
 	r.Top += m.TopHeight
@@ -528,7 +528,7 @@ func stripMargins(r *win.RECT, m win.MARGINS) {
 // themeStates holds the uxtheme part states for the various components of the
 // menu item.
 type themeStates struct {
-	checkBg int32
+	checkBg int32 // checkBg is ignored unless checked == true
 	checkFg int32 // checkFg is ignored unless checked == true
 	checked bool
 	item    int32
@@ -628,8 +628,6 @@ func (odi *ownerDrawnMenuItemInfo) onDraw(w Window, dis *win.DRAWITEMSTRUCT) {
 	dpi := odi.resolveDPI()
 	canvas.dpi = dpi
 
-	themeStates := odi.itemStateToThemeStates(dis.ItemState)
-
 	theme.drawBackground(canvas, win.MENU_POPUPBACKGROUND, 0, &dis.RcItem)
 	theme.drawBackground(canvas, win.MENU_POPUPGUTTER, 0, &odi.layout.gutterRect)
 
@@ -638,6 +636,7 @@ func (odi *ownerDrawnMenuItemInfo) onDraw(w Window, dis *win.DRAWITEMSTRUCT) {
 		return
 	}
 
+	themeStates := odi.itemStateToThemeStates(dis.ItemState)
 	theme.drawBackground(canvas, win.MENU_POPUPITEM, themeStates.item, &odi.layout.selectionRect)
 
 	if themeStates.checked {
