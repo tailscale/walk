@@ -15,9 +15,9 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-// DefaultOwnerDrawHandler is the ActionOwnerDrawHandler used by owner-drawn
+// DefaultActionOwnerDrawHandler is the ActionOwnerDrawHandler used by owner-drawn
 // menu items for emulating the way themed menu items are drawn by the system.
-var DefaultOwnerDrawHandler defaultOwnerDrawHandler
+var DefaultActionOwnerDrawHandler defaultActionOwnerDrawHandler
 
 // MenuItemMeasureContext is the data passed into an ActionOwnerDrawHandler's
 // OnMeasure method to facilitate measurement of an owner-draw menu item.
@@ -684,10 +684,10 @@ func (odi *ownerDrawnMenuItemInfo) Dispose() {
 	odi.perMenuMetrics = nil
 }
 
-type defaultOwnerDrawHandler struct{}
+type defaultActionOwnerDrawHandler struct{}
 
 // OnMeasure by default just measures the extents of the menu text.
-func (defaultOwnerDrawHandler) OnMeasure(action *Action, mctx *MenuItemMeasureContext) (widthPixels, heightPixels uint32) {
+func (defaultActionOwnerDrawHandler) OnMeasure(action *Action, mctx *MenuItemMeasureContext) (widthPixels, heightPixels uint32) {
 	extent, err := mctx.Theme.textExtent(mctx.Canvas, mctx.ThemeFont, win.MENU_POPUPITEM, 0, action.Text(), win.DT_LEFT|win.DT_SINGLELINE)
 	if err == nil {
 		widthPixels = uint32(extent.CX)
@@ -698,7 +698,7 @@ func (defaultOwnerDrawHandler) OnMeasure(action *Action, mctx *MenuItemMeasureCo
 }
 
 // OnDraw by default draws both the menu text and the accelerator text, if any.
-func (defaultOwnerDrawHandler) OnDraw(action *Action, dctx *MenuItemDrawContext) {
+func (defaultActionOwnerDrawHandler) OnDraw(action *Action, dctx *MenuItemDrawContext) {
 	flags := uint32(win.DT_LEFT | win.DT_SINGLELINE)
 	if (dctx.State & win.ODS_NOACCEL) != 0 {
 		flags |= win.DT_HIDEPREFIX

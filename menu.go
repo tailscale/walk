@@ -175,7 +175,7 @@ func (m *Menu) updateItemsForWindow(window Window) {
 		// If we need accelerator space, then we need to measure each item's
 		// shortcut text.
 		// If we have any owner-drawn items, any remaining actions that are not
-		// owner-drawn must be set to owner-drawn via DefaultOwnerDrawHandler.
+		// owner-drawn must be set to owner-drawn via DefaultActionOwnerDrawHandler.
 		// Failure to do so would result in non-owner-drawn items being rendered
 		// without any theming whatsoever.
 		m.actions.forEach(func(a *Action) bool {
@@ -185,7 +185,7 @@ func (m *Menu) updateItemsForWindow(window Window) {
 			if a.OwnerDraw() {
 				return true
 			}
-			a.ownerDrawInfo = newOwnerDrawnMenuItemInfo(a, DefaultOwnerDrawHandler)
+			a.ownerDrawInfo = newOwnerDrawnMenuItemInfo(a, DefaultActionOwnerDrawHandler)
 			a.ownerDrawInfo.sharedMetrics = sm
 			a.ownerDrawInfo.perMenuMetrics = &m.perMenuMetrics
 			m.onActionChanged(a)
