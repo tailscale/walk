@@ -13,17 +13,16 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func TestStripMnemonic(t *testing.T) {
+func TestFindExplicitMnemonic(t *testing.T) {
 	testCases := []struct {
 		text    string
-		want    string
 		wantKey Key
 	}{
-		{"", "", 0},
-		{"Law 'N' Order", "Law 'N' Order", 0},
-		{"Law && Order", "Law & Order", 0},
-		{"Law && &Order", "Law & Order", KeyO},
-		{"&Law && &Order && Bacon", "Law & Order & Bacon", KeyL},
+		{"", 0},
+		{"Law 'N' Order", 0},
+		{"Law && Order", 0},
+		{"Law && &Order", KeyO},
+		{"&Law && &Order && Bacon", KeyL},
 	}
 
 	for _, c := range testCases {
@@ -31,11 +30,7 @@ func TestStripMnemonic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("UTF16FromString error %v", err)
 		}
-		k, s := stripMnemonic(utext)
-		got := windows.UTF16ToString(s)
-		if got != c.want {
-			t.Errorf("stripped text for %q got %q, want %q", c.text, got, c.want)
-		}
+		k := findExplicitMnemonic(utext)
 		if k != c.wantKey {
 			t.Errorf("key for %q got 0x%02X, want 0x%02X", c.text, k, c.wantKey)
 		}

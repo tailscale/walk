@@ -210,7 +210,7 @@ func (g *GDIPlusCanvas) ResetClip() error {
 
 // SetClipPath adds path to g's clipping region. combineMode specifies how the
 // path should be combined with the existing clipping region. For more
-// information about the semanics of combineMode, consult the [Microsoft documentation].
+// information about the semantics of combineMode, consult the [Microsoft documentation].
 //
 // [Microsoft documentation]: https://web.archive.org/web/20230206194140/https://learn.microsoft.com/en-us/windows/win32/api/gdiplusenums/ne-gdiplusenums-combinemode
 func (g *GDIPlusCanvas) SetClipPath(path *GDIPlusPath, combineMode win.CombineMode) error {
