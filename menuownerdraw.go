@@ -12,7 +12,6 @@ import (
 	"unsafe"
 
 	"github.com/tailscale/win"
-	"golang.org/x/exp/slices"
 )
 
 // DefaultActionOwnerDrawHandler is the ActionOwnerDrawHandler used by owner-drawn
@@ -68,8 +67,8 @@ type menuSpecificMetrics struct {
 	maxAccelTextExtent win.SIZE
 }
 
-func (am *menuSpecificMetrics) reset() {
-	am.maxAccelTextExtent = win.SIZE{}
+func (mm *menuSpecificMetrics) reset() {
+	mm.maxAccelTextExtent = win.SIZE{}
 }
 
 // measureAccelTextExtent measures the size, in pixels, of the right-justified
@@ -264,7 +263,7 @@ func newMenuSharedMetrics(window Window) *menuSharedMetrics {
 }
 
 // measure measures an entire menu item, delegating measurement of the content
-// area to odi.handler.onMeasure. This allows Walk to handle the measurement of
+// area to odi.handler.OnMeasure. This allows walk to handle the measurement of
 // all common menu features (backgrounds, checkboxes, margins, chevrons, etc.)
 // while enabling the application to focus only on measuring its custom content.
 func (ml *menuItemLayout) measure(w Window, odi *ownerDrawnMenuItemInfo) (uint32, uint32) {
@@ -337,7 +336,7 @@ func (ml *menuItemLayout) measure(w Window, odi *ownerDrawnMenuItemInfo) (uint32
 	// and then add in the width of the rest of the menu item.
 	cx := uint32(sm.combinedCheckBgSize.CX + combinedContentItemSize.CX)
 
-	// On the Y-axis, we want the maxiumum height across checkbox, content, and chevron.
+	// On the Y-axis, we want the maximum height across checkbox, content, and chevron.
 	cy := uint32(Max(sm.combinedCheckBgSize.CY, combinedContentItemSize.CY, sm.combinedChevronSize.CY))
 
 	return cx, cy
@@ -392,7 +391,7 @@ func (ml *menuItemLayout) layout(sm *menuSharedMetrics, rect *win.RECT) {
 // menu item.
 type ownerDrawnMenuItemInfo struct {
 	win.MSAAMENUINFO // must embed MSAAMENUINFO for proper a11y support
-	prevText         string
+	text             string
 	action           *Action
 	handler          ActionOwnerDrawHandler
 	sharedMetrics    *menuSharedMetrics
@@ -422,14 +421,14 @@ func newOwnerDrawnMenuItemInfo(action *Action, handler ActionOwnerDrawHandler) *
 // updateText synchronizes odi's a11y text and keyboard mnemonics with
 // odi.action.text.
 func (odi *ownerDrawnMenuItemInfo) updateText() {
-	if odi.action.text == odi.prevText {
+	if odi.action.text == odi.text {
 		return
 	}
 
-	odi.prevText = odi.action.text
+	odi.text = odi.action.text
 
 	textUTF16 := syscall.StringToUTF16(odi.action.text)
-	textUTF16 = odi.updateMnemonic(textUTF16)
+	odi.updateMnemonic(textUTF16)
 	if len(textUTF16) == 0 {
 		odi.MSAAMENUINFO.TextLenExclNul = 0
 		odi.MSAAMENUINFO.Text = nil
@@ -440,30 +439,20 @@ func (odi *ownerDrawnMenuItemInfo) updateText() {
 	odi.MSAAMENUINFO.Text = &textUTF16[0]
 }
 
-func (odi *ownerDrawnMenuItemInfo) updateMnemonic(textUTF16 []uint16) (result []uint16) {
-	odi.mnemonic, result = stripMnemonic(textUTF16)
-	return result
+func (odi *ownerDrawnMenuItemInfo) updateMnemonic(textUTF16 []uint16) {
+	odi.mnemonic = findExplicitMnemonic(textUTF16)
 }
 
-// stripMnemonic searches the menu text for the first '&'-prefixed character
-// (if present) and then returns that character's virtual key code as the
-// mnemonic. textUTF16 is stripped of all ampersands used for escaping mnemonics
-// and is also returned.
-func stripMnemonic(textUTF16 []uint16) (newMnemonic Key, _ []uint16) {
+// findExplicitMnemonic searches the menu text for the first '&'-prefixed
+// character (if present) and then returns that character's virtual key code as
+// the mnemonic.
+func findExplicitMnemonic(textUTF16 []uint16) (newMnemonic Key) {
 	var maybeMnemonic bool
-	var stripIdx []int
 
-	for i, p := range textUTF16 {
+	for _, p := range textUTF16 {
 		if maybeMnemonic {
 			maybeMnemonic = false
-			stripIdx = append(stripIdx, i-1)
 			if p == '&' {
-				continue
-			}
-			// Only the first valid mnemonic in the string will be returned as
-			// newMnemonic, however we still continue the loop to strip out any
-			// remaining ampersands.
-			if newMnemonic != 0 {
 				continue
 			}
 			// Convert the UTF-16 code unit into a virtual key code.
@@ -471,21 +460,14 @@ func stripMnemonic(textUTF16 []uint16) (newMnemonic Key, _ []uint16) {
 			if vkInfo != -1 {
 				// The virtual key code is in the lower byte of vkInfo.
 				newMnemonic = Key(vkInfo & 0xFF)
+				break
 			}
 		} else if p == '&' {
 			maybeMnemonic = true
 		}
 	}
 
-	// Strip out any ampersands that we recorded above. The values in stripIdx are
-	// sorted in descending order, so we scan the slice in reverse so that lower
-	// indices are not invalidated as we delete.
-	for i := len(stripIdx) - 1; i >= 0; i-- {
-		j := stripIdx[i]
-		textUTF16 = slices.Delete(textUTF16, j, j+1)
-	}
-
-	return newMnemonic, textUTF16
+	return newMnemonic
 }
 
 func (odi *ownerDrawnMenuItemInfo) onActionChanged(action *Action) error {
@@ -577,7 +559,7 @@ func (odi *ownerDrawnMenuItemInfo) itemStateToThemeStates(state uint32) (result 
 }
 
 // onDraw draws an entire menu item, delegating rendering of the content area
-// to odi.handler.onDraw. This allows walk to handle the layout of all common
+// to odi.handler.OnDraw. This allows walk to handle the layout of all common
 // menu features (backgrounds, checkboxes, margins etc) while enabling the
 // application to focus only on rendering its custom content.
 func (odi *ownerDrawnMenuItemInfo) onDraw(w Window, dis *win.DRAWITEMSTRUCT) {
