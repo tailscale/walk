@@ -449,7 +449,7 @@ func NewGDIPlusBitmapFromHBITMAP(hbitmap win.HBITMAP) (*GDIPlusBitmap, error) {
 	return result, nil
 }
 
-// NewGDIPlusbitmapFromStream creates a GDIPlusBitmap whose contents are
+// NewGDIPlusBitmapFromStream creates a GDIPlusBitmap whose contents are
 // initialized from stream. The data in stream must be in a format that is
 // supported by GDI+.
 func NewGDIPlusBitmapFromStream(stream com.Stream) (*GDIPlusBitmap, error) {

@@ -41,7 +41,7 @@ func notifyIconWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) (resul
 		ni.mouseUpPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), RightButton)
 
 	case win.WM_CONTEXTMENU:
-		if !ni.showContextMenuPublisher.Publish() || ni.contextMenu.Actions().Len() == 0 {
+		if !ni.showContextMenuPublisher.Publish() || !ni.contextMenu.Actions().HasVisible() {
 			break
 		}
 
