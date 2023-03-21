@@ -209,6 +209,8 @@ func (m *Menu) initMenuItemInfoFromAction(mii *win.MENUITEMINFO, action *Action)
 	mii.CbSize = uint32(unsafe.Sizeof(*mii))
 	mii.FMask = win.MIIM_FTYPE | win.MIIM_ID | win.MIIM_STATE
 
+	setString := true
+
 	switch {
 	case action.ownerDrawInfo != nil:
 		mii.FType |= win.MFT_OWNERDRAW
@@ -216,6 +218,7 @@ func (m *Menu) initMenuItemInfoFromAction(mii *win.MENUITEMINFO, action *Action)
 		// (*WindowBase).WndProc to quickly resolve the menu item being drawn.
 		mii.FMask |= win.MIIM_DATA
 		mii.DwItemData = uintptr(unsafe.Pointer(action.ownerDrawInfo))
+		setString = false
 	case action.image != nil:
 		mii.FMask |= win.MIIM_BITMAP
 		dpi := m.resolveDPI()
@@ -224,10 +227,11 @@ func (m *Menu) initMenuItemInfoFromAction(mii *win.MENUITEMINFO, action *Action)
 		}
 	case action.IsSeparator():
 		mii.FType |= win.MFT_SEPARATOR
+		setString = false
 	default:
 	}
 
-	if !action.IsSeparator() {
+	if setString {
 		mii.FMask |= win.MIIM_STRING
 		mii.FType |= win.MFT_STRING
 		var text string
@@ -294,7 +298,7 @@ func (m *Menu) onActionChanged(action *Action) error {
 		win.SetMenuDefaultItem(m.hMenu, uint32(m.actions.indexInObserver(action)), true)
 	}
 
-	if action.Exclusive() && action.Checked() {
+	if action.Checked() && action.Exclusive() {
 		first, last, index, err := m.actions.positionsForExclusiveCheck(action)
 		if err != nil {
 			return err

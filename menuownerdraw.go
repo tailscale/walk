@@ -510,11 +510,11 @@ func stripMargins(r *win.RECT, m win.MARGINS) {
 // themeStates holds the uxtheme part states for the various components of the
 // menu item.
 type themeStates struct {
-	checkBg int32 // checkBg is ignored unless checked == true
-	checkFg int32 // checkFg is ignored unless checked == true
-	checked bool
 	item    int32
 	chevron int32
+	checked bool
+	checkBg int32 // checkBg is ignored unless checked == true
+	checkFg int32 // checkFg is ignored unless checked == true
 }
 
 // itemStateToThemeStates takes the menu item's state from a win.DRAWITEMSTRUCT

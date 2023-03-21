@@ -139,7 +139,9 @@ func (l *ActionList) positionsForExclusiveCheck(action *Action) (first, last, in
 		if !a.Exclusive() {
 			break
 		}
-		last++
+		if a.Visible() {
+			last++
+		}
 	}
 
 	return first, last, index, nil
@@ -261,4 +263,12 @@ func (l *ActionList) forEachVisible(f func(*Action) bool) {
 			break
 		}
 	}
+}
+
+func (l *ActionList) HasVisible() (result bool) {
+	l.forEachVisible(func(*Action) bool {
+		result = true
+		return false
+	})
+	return result
 }
