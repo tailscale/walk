@@ -45,6 +45,11 @@ func notifyIconWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) (resul
 			break
 		}
 
+		// When calling TrackPopupMenu(Ex) for notification icons, we need to do a
+		// little dance to ensure that focus arrives and leaves the context menu
+		// correctly. The original source for this information is long gone, but
+		// fortunately it was archived.
+		// See https://web.archive.org/web/20000205130053/http://support.microsoft.com/support/kb/articles/q135/7/88.asp
 		win.SetForegroundWindow(hwnd)
 
 		ni.applyDPI()
@@ -56,6 +61,10 @@ func notifyIconWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) (resul
 			win.GET_Y_LPARAM(wParam),
 			hwnd,
 			nil))
+
+		// See the above comment.
+		win.PostMessage(hwnd, win.WM_NULL, 0, 0)
+
 		if actionId != 0 {
 			if action, ok := actionsById[actionId]; ok {
 				action.raiseTriggered()
