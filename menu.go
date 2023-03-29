@@ -382,7 +382,7 @@ func (m *Menu) removeAction(action *Action, visibleChanged bool) error {
 
 func (m *Menu) ensureMenuBarRedrawn() {
 	if m.window != nil {
-		if mw, ok := m.window.(*MainWindow); ok && mw != nil {
+		if mw, ok := m.window.(*MainWindow); ok && mw.menu == m {
 			win.DrawMenuBar(mw.Handle())
 		}
 	}
