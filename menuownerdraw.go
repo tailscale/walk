@@ -73,7 +73,7 @@ func (mm *menuSpecificMetrics) reset() {
 
 // measureAccelTextExtent measures the size, in pixels, of the right-justified
 // text that will be drawn in the menu item for the item's Shortcut.
-func (am *menuSpecificMetrics) measureAccelTextExtent(window Window, action *Action) {
+func (mm *menuSpecificMetrics) measureAccelTextExtent(window Window, action *Action) {
 	if action.shortcut.Key == 0 {
 		// This action does not have a Shortcut, so don't bother measuring it.
 		return
@@ -105,8 +105,8 @@ func (am *menuSpecificMetrics) measureAccelTextExtent(window Window, action *Act
 
 	// We don't need to track the extents of every single item, just the maximum
 	// size across all items.
-	am.maxAccelTextExtent.CX = Max(am.maxAccelTextExtent.CX, extent.CX)
-	am.maxAccelTextExtent.CY = Max(am.maxAccelTextExtent.CY, extent.CY)
+	mm.maxAccelTextExtent.CX = Max(mm.maxAccelTextExtent.CX, extent.CX)
+	mm.maxAccelTextExtent.CY = Max(mm.maxAccelTextExtent.CY, extent.CY)
 }
 
 // menuSharedMetrics contains the font, margin, and size metrics for all menus

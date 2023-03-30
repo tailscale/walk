@@ -265,6 +265,8 @@ func (l *ActionList) forEachVisible(f func(*Action) bool) {
 	}
 }
 
+// HasVisible returns true if l contains any visible Actions. Note that this is
+// a linear-time operation in the worst-case.
 func (l *ActionList) HasVisible() (result bool) {
 	l.forEachVisible(func(*Action) bool {
 		result = true
