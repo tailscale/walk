@@ -448,6 +448,7 @@ type WindowBase struct {
 	suspended                 bool
 	visible                   bool
 	enabled                   bool
+	needDrawMenuBar           bool
 	acc                       *Accessibility
 	themes                    map[string]*Theme
 	menuSharedMetrics96DPI    *menuSharedMetrics
@@ -2381,6 +2382,19 @@ func (wb *WindowBase) menuSharedMetrics() *menuSharedMetrics {
 	return dpicache.InstanceForDPI(wb.menuSharedMetrics96DPI, wb.DPI())
 }
 
+func (wb *WindowBase) invalidateMenuBar() {
+	wb.needDrawMenuBar = true
+}
+
+func (wb *WindowBase) redrawMenuBar() {
+	if !wb.needDrawMenuBar {
+		return
+	}
+
+	wb.needDrawMenuBar = false
+	win.DrawMenuBar(wb.hWnd)
+}
+
 // WndProc is the window procedure of the window.
 //
 // When implementing your own WndProc to add or modify behavior, call the
@@ -2553,7 +2567,7 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 
 	case win.WM_INITMENUPOPUP:
 		if m := resolveMenu(win.HMENU(wParam)); m != nil {
-			m.onInitPopup(wb)
+			m.onInitPopup(wb.window)
 			return 0
 		}
 
