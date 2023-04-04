@@ -2553,7 +2553,7 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 
 	case win.WM_INITMENUPOPUP:
 		if m := resolveMenu(win.HMENU(wParam)); m != nil {
-			m.onInitPopup(wb)
+			m.onInitPopup(wb.window)
 			return 0
 		}
 

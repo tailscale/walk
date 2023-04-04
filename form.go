@@ -886,8 +886,6 @@ func (fb *FormBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) u
 		}
 
 	case taskbarCreatedMsgId:
-		// Invalidate all NotifyIcon IDs by replacing the map, then re-add them.
-		notifyIconIDs = make(map[uint16]*NotifyIcon)
 		for ni := range notifyIcons {
 			ni.reAddToTaskbar()
 		}

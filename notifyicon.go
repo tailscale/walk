@@ -303,28 +303,34 @@ func (ni *NotifyIcon) isDefunct() bool {
 	return ni.shellIcon.hWnd == 0
 }
 
-func (ni *NotifyIcon) reAddToTaskbar() error {
-	// The ID is no longer valid. We'll get a new one via the NIM_ADD command.
-	ni.shellIcon.id = nil
+func (ni *NotifyIcon) reAddToTaskbar() {
+	// The icon ID may or may not change; save the previous ID so we can properly
+	// track this once the add command successfully executes.
+	prevID := ni.shellIcon.id
 
 	cmd := ni.shellIcon.newCmd(win.NIM_ADD)
 	cmd.setCallbackMessage(notifyIconMessageId)
 	cmd.setVisible(ni.visible)
 	cmd.setIcon(ni.getHICON(ni.icon))
 	if err := cmd.setToolTip(ni.toolTip); err != nil {
-		return err
+		return
 	}
 
 	if err := cmd.execute(); err != nil {
-		return err
+		return
 	}
 
-	if ni.shellIcon.id != nil {
+	newID := ni.shellIcon.id
+	if prevID != nil && (newID == nil || *prevID != *newID) {
+		// The ID has changed. Remove defunct prevID from notifyIconIDs.
+		delete(notifyIconIDs, uint16(*prevID))
+	}
+	if newID != nil {
 		// Add the new ID
-		notifyIconIDs[uint16(*(ni.shellIcon.id))] = ni
+		notifyIconIDs[uint16(*newID)] = ni
 	}
 
-	return nil
+	return
 }
 
 func (ni *NotifyIcon) reEnableToolTip() error {
