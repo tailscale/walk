@@ -133,7 +133,6 @@ func (m *Menu) onInitPopup(window Window) {
 	m.initPopupPublisher.Publish()
 	m.perMenuMetrics.reset()
 	m.updateItemsForWindow(window)
-	window.AsWindowBase().redrawMenuBar()
 }
 
 func (m *Menu) Actions() *ActionList {
@@ -310,8 +309,6 @@ func (m *Menu) onActionChanged(action *Action) error {
 		}
 	}
 
-	m.ensureMenuBarRedrawn()
-
 	return nil
 }
 
@@ -386,13 +383,8 @@ func (m *Menu) removeAction(action *Action, visibleChanged bool) error {
 func (m *Menu) ensureMenuBarRedrawn() {
 	if m.window != nil {
 		if mw, ok := m.window.(*MainWindow); ok && mw.menu == m {
-			// If m is the top-level menu belonging to a MainWindow, redraw it immediately.
 			win.DrawMenuBar(mw.Handle())
-			return
 		}
-
-		// Otherwise we redraw the menu bar lazily when a popup menu is shown.
-		m.window.AsWindowBase().invalidateMenuBar()
 	}
 }
 
