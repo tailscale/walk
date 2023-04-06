@@ -180,7 +180,7 @@ func (m *Menu) updateItemsForWindow(window Window) {
 		// without any theming whatsoever.
 		m.actions.forEach(func(a *Action) bool {
 			if needAccelSpace {
-				defer m.perMenuMetrics.measureAccelTextExtent(window, a)
+				defer m.perMenuMetrics.measureAccelTextExtent(m.window, a)
 			}
 			if a.OwnerDraw() {
 				return true
@@ -280,6 +280,8 @@ func (m *Menu) handleDefaultState(action *Action) {
 }
 
 func (m *Menu) onActionChanged(action *Action) error {
+	defer m.ensureMenuBarRedrawn()
+
 	m.handleDefaultState(action)
 
 	if !action.Visible() {
