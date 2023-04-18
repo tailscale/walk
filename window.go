@@ -928,6 +928,10 @@ func (wb *WindowBase) Dispose() {
 		t.close()
 	}
 
+	if wb.menuSharedMetrics96DPI != nil {
+		dpicache.Delete(wb.menuSharedMetrics96DPI)
+	}
+
 	if hWnd != 0 {
 		wb.group.accClearHwndProps(wb.hWnd)
 		wb.group.Done()
