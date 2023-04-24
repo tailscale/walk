@@ -285,7 +285,7 @@ func (ml *menuItemLayout) measure(w Window, odi *ownerDrawnMenuItemInfo) (uint32
 	}
 	defer canvas.Dispose()
 
-	canvas.dpi = odi.resolveDPI()
+	canvas.dpi = sm.DPI()
 
 	// Ask the ActionOwnerDrawHandler for its custom content's measurements.
 	mctx := MenuItemMeasureContext{
@@ -479,14 +479,6 @@ func (odi *ownerDrawnMenuItemInfo) onActionVisibleChanged(action *Action) error 
 	return nil
 }
 
-func (odi *ownerDrawnMenuItemInfo) resolveDPI() int {
-	dpi := 96
-	if odi != nil && odi.action != nil && odi.action.menu != nil {
-		dpi = odi.action.menu.resolveDPI()
-	}
-	return dpi
-}
-
 func (odi *ownerDrawnMenuItemInfo) onMeasure(w Window, mis *win.MEASUREITEMSTRUCT) {
 	mis.ItemWidth, mis.ItemHeight = odi.layout.measure(w, odi)
 }
@@ -607,7 +599,7 @@ func (odi *ownerDrawnMenuItemInfo) onDraw(w Window, dis *win.DRAWITEMSTRUCT) {
 	}
 	defer canvas.Dispose()
 
-	dpi := odi.resolveDPI()
+	dpi := sm.DPI()
 	canvas.dpi = dpi
 
 	theme.drawBackground(canvas, win.MENU_POPUPBACKGROUND, 0, &dis.RcItem)
