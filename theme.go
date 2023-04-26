@@ -50,35 +50,47 @@ func (t *Theme) close() {
 	}
 }
 
-// BackgroundPartiallyTransparent returns true when the theme component resolved
-// by partID and stateID is not 100% opaque.
-func (t *Theme) BackgroundPartiallyTransparent(partID, stateID int32) bool {
+// IsBackgroundPartiallyTransparent returns true when the theme component
+// resolved by partID and stateID is not 100% opaque.
+func (t *Theme) IsBackgroundPartiallyTransparent(partID, stateID int32) bool {
 	return win.IsThemeBackgroundPartiallyTransparent(t.htheme, partID, stateID)
 }
 
-// PartSize obtains a Size property as specified by partID, stateID and propID.
-// esize indicates the requested win.THEMESIZE. For more information about
-// THEMESIZE, consult the [Microsoft documentation].
+// PartSize obtains a ThemeSizeMetric as specified by partID and stateID.
+// bounds is optional and may be nil. esize indicates the requested
+// win.THEMESIZE. For more information about THEMESIZE, consult the [Microsoft documentation].
 //
 // [Microsoft documentation]: https://web.archive.org/web/20221001094810/https://learn.microsoft.com/en-us/windows/win32/api/uxtheme/ne-uxtheme-themesize
-func (t *Theme) PartSize(partID, stateID int32, bounds Rectangle, esize win.THEMESIZE) (result Size, err error) {
-	rect := bounds.toRECT()
-	size, err := t.partSize(partID, stateID, &rect, esize)
-	if err != nil {
-		return result, err
+func (t *Theme) PartSize(partID, stateID int32, bounds *Rectangle, esize win.THEMESIZE) (ThemeSizeMetric, error) {
+	var rect *win.RECT
+	if bounds != nil {
+		br := bounds.toRECT()
+		rect = &br
 	}
 
-	result = sizeFromSIZE(size)
-	return result, nil
+	return t.partSize(partID, stateID, rect, esize)
 }
 
-func (t *Theme) partSize(partID, stateID int32, rect *win.RECT, esize win.THEMESIZE) (size win.SIZE, _ error) {
-	hr := win.GetThemePartSize(t.htheme, win.HDC(0), partID, stateID, rect, esize, &size)
-	if win.FAILED(hr) {
-		return size, errorFromHRESULT("GetThemePartSize", hr)
+func (t *Theme) partSize(partID, stateID int32, rect *win.RECT, esize win.THEMESIZE) (ThemeSizeMetric, error) {
+	if t.isTrueSize(partID, stateID) {
+		result := &themeTrueSizeMetric{
+			theme:   t,
+			partID:  partID,
+			stateID: stateID,
+			bounds:  rect,
+			esize:   esize,
+		}
+		result.setInterface(result)
+		return result, nil
 	}
 
-	return size, nil
+	tsom := new(themeSizeOriginalMetric)
+	if hr := win.GetThemePartSize(t.htheme, win.HDC(0), partID, stateID, rect, esize, &tsom.themeSizeMetric.size); win.FAILED(hr) {
+		return nil, errorFromHRESULT("GetThemePartSize", hr)
+	}
+
+	tsom.setInterface(tsom)
+	return tsom, nil
 }
 
 // Integer obtains an integral property as resolved by partID, stateID and propID.
@@ -212,12 +224,12 @@ func (t *Theme) Font(partID, stateID, propID int32) (*Font, error) {
 
 // SysFont obtains the theme's font associated with the system fontID, which
 // must be one of the following constants:
-//	 * [win.TMT_CAPTIONFONT]
-//	 * [win.TMT_SMALLCAPTIONFONT]
-//	 * [win.TMT_MENUFONT]
-//	 * [win.TMT_STATUSFONT]
-//	 * [win.TMT_MSGBOXFONT]
-//	 * [win.TMT_ICONTITLEFONT]
+//   - [win.TMT_CAPTIONFONT]
+//   - [win.TMT_SMALLCAPTIONFONT]
+//   - [win.TMT_MENUFONT]
+//   - [win.TMT_STATUSFONT]
+//   - [win.TMT_MSGBOXFONT]
+//   - [win.TMT_ICONTITLEFONT]
 func (t *Theme) SysFont(fontID int32) (*Font, error) {
 	var lf win.LOGFONT
 	hr := win.GetThemeSysFont(t.htheme, fontID, &lf)
@@ -227,4 +239,104 @@ func (t *Theme) SysFont(fontID int32) (*Font, error) {
 
 	// GetThemeSysFont appears to always use 96DPI, despite its documentation.
 	return newFontFromLOGFONT(&lf, 96)
+}
+
+// isTrueSize determines whether the theme component with the given partID and
+// stateID is a "true-size" component: such components are not scaled linearly,
+// but rather consist of multiple raster images, one of which is chosen
+// depending on display density.
+func (t *Theme) isTrueSize(partID, stateID int32) bool {
+	var enumVal int32
+	if hr := win.GetThemeEnumValue(t.htheme, partID, stateID, win.TMT_BGTYPE, &enumVal); win.FAILED(hr) {
+		return false
+	}
+	if enumVal != win.BT_IMAGEFILE {
+		return false
+	}
+
+	if hr := win.GetThemeEnumValue(t.htheme, partID, stateID, win.TMT_SIZINGTYPE, &enumVal); win.FAILED(hr) {
+		return false
+	}
+	return enumVal == win.ST_TRUESIZE
+}
+
+// ThemeSizeMetric is an interface that represents the Size associated with a
+// particular theme component.
+type ThemeSizeMetric interface {
+	// PartSize returns the Size of the part associated with this metric.
+	PartSize() (result Size, err error)
+	partSize() (result win.SIZE, err error)
+}
+
+// ThemeSizeScaler is an interface that some metrics optionally implement when
+// they support scaling to a different DPI.
+type ThemeSizeScaler interface {
+	CopyForDPI(dpi int) ThemeSizeMetric
+}
+
+type themeSizeMetric struct {
+	iface ThemeSizeMetric
+	size  win.SIZE
+}
+
+func (tsm *themeSizeMetric) setInterface(i ThemeSizeMetric) {
+	tsm.iface = i
+}
+
+func (tsm *themeSizeMetric) PartSize() (result Size, err error) {
+	size, err := tsm.iface.partSize()
+	if err != nil {
+		return result, err
+	}
+
+	result = sizeFromSIZE(size)
+	return result, nil
+}
+
+func (tsm *themeSizeMetric) partSize() (win.SIZE, error) {
+	return tsm.size, nil
+}
+
+// themeSizeOriginalMetric is identical to themeSizeMetric except that it
+// also satisfies ThemeSizeScaler.
+type themeSizeOriginalMetric struct {
+	themeSizeMetric
+}
+
+func (tsom *themeSizeOriginalMetric) CopyForDPI(dpi int) ThemeSizeMetric {
+	newSize := SIZEFrom96DPI(tsom.themeSizeMetric.size, dpi)
+	// The copy should not satisfy ThemeSizeScaler, so we return a *themeSizeMetric.
+	return &themeSizeMetric{iface: tsom, size: newSize}
+}
+
+type themeTrueSizeMetric struct {
+	themeSizeOriginalMetric
+	theme   *Theme
+	partID  int32
+	stateID int32
+	bounds  *win.RECT
+	esize   win.THEMESIZE
+}
+
+func (ttsm *themeTrueSizeMetric) partSize() (result win.SIZE, err error) {
+	// True-sized metrics must query for their part size at every DPI.
+	// We cache the result in the themeSizeMetric's size field.
+	pSize := &ttsm.themeSizeOriginalMetric.themeSizeMetric.size
+	var zero win.SIZE
+	if *pSize != zero {
+		return *pSize, nil
+	}
+
+	if hr := win.GetThemePartSize(ttsm.theme.htheme, win.HDC(0), ttsm.partID, ttsm.stateID, ttsm.bounds, ttsm.esize, pSize); win.FAILED(hr) {
+		return result, errorFromHRESULT("GetThemePartSize", hr)
+	}
+
+	return *pSize, nil
+}
+
+func (ttsm *themeTrueSizeMetric) CopyForDPI(dpi int) ThemeSizeMetric {
+	result := *ttsm
+	result.setInterface(&result)
+	result.themeSizeOriginalMetric.themeSizeMetric.size = win.SIZE{}
+	return &result
 }

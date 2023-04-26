@@ -114,21 +114,21 @@ func (mm *menuSpecificMetrics) measureAccelTextExtent(window Window, action *Act
 type menuSharedMetrics struct {
 	dpi int
 
-	checkMargins   win.MARGINS // Margins surrounding a check mark
-	checkBgMargins win.MARGINS // Margins surrounding checkMargins to provide space for check background
+	checkMargins   win.MARGINS // Margins surrounding a check mark for check background
+	checkBgMargins win.MARGINS // Margins surrounding checkMargins to provide space for gutter
 	itemMargins    win.MARGINS // Margins surrounding an item (excluding checkbox)
 	contentMargins win.MARGINS // Margins surrounding the item's content
 	chevronMargins win.MARGINS // Margins surrounding a submenu chevron
 
-	checkSize           win.SIZE // Size of a check mark
-	combinedCheckSize   win.SIZE // Size of a check mark, plus margins
-	combinedCheckBgSize win.SIZE // combinedCheckSize, plus check background margins
+	checkSize         ThemeSizeMetric // Size of a check mark
+	combinedCheckSize win.SIZE        // Size of a check mark, plus margins
+	gutterSize        win.SIZE        // combinedCheckSize, plus check background margins
 
-	chevronSize         win.SIZE // Size of a submenu chevron
-	combinedChevronSize win.SIZE // Size of a submenu chevron, plus margins
+	chevronSize         ThemeSizeMetric // Size of a submenu chevron
+	combinedChevronSize win.SIZE        // Size of a submenu chevron, plus margins
 
-	separatorSize         win.SIZE // Size of a separator
-	combinedSeparatorSize win.SIZE // Size of a separator, plus margins
+	separatorSize         ThemeSizeMetric // Size of a separator
+	combinedSeparatorSize win.SIZE        // Size of a separator, plus margins
 
 	fontNormal *Font
 	fontBold   *Font
@@ -147,22 +147,20 @@ func (sm *menuSharedMetrics) CopyForDPI(dpi int) *menuSharedMetrics {
 	}
 
 	result := &menuSharedMetrics{
-		dpi:                   dpi,
-		checkMargins:          MARGINSFrom96DPI(sm.checkMargins, dpi),
-		checkBgMargins:        MARGINSFrom96DPI(sm.checkBgMargins, dpi),
-		itemMargins:           MARGINSFrom96DPI(sm.itemMargins, dpi),
-		contentMargins:        MARGINSFrom96DPI(sm.contentMargins, dpi),
-		chevronMargins:        MARGINSFrom96DPI(sm.chevronMargins, dpi),
-		checkSize:             SIZEFrom96DPI(sm.checkSize, dpi),
-		combinedCheckSize:     SIZEFrom96DPI(sm.combinedCheckSize, dpi),
-		combinedCheckBgSize:   SIZEFrom96DPI(sm.combinedCheckBgSize, dpi),
-		chevronSize:           SIZEFrom96DPI(sm.chevronSize, dpi),
-		combinedChevronSize:   SIZEFrom96DPI(sm.combinedChevronSize, dpi),
-		separatorSize:         SIZEFrom96DPI(sm.separatorSize, dpi),
-		combinedSeparatorSize: SIZEFrom96DPI(sm.combinedSeparatorSize, dpi),
-		fontNormal:            sm.fontNormal, // DPI scaling handled within Font
-		fontBold:              sm.fontBold,   // DPI scaling handled within Font
+		dpi:            dpi,
+		checkMargins:   sm.checkMargins,   // checkMargins is not scaled
+		checkBgMargins: sm.checkBgMargins, // checkBgMargins is not scaled
+		itemMargins:    sm.itemMargins,    // itemMargins is not scaled
+		contentMargins: MARGINSFrom96DPI(sm.contentMargins, dpi),
+		chevronMargins: sm.chevronMargins, // chevronMargins is not scaled
+		checkSize:      sm.checkSize.(ThemeSizeScaler).CopyForDPI(dpi),
+		chevronSize:    sm.chevronSize.(ThemeSizeScaler).CopyForDPI(dpi),
+		separatorSize:  sm.separatorSize.(ThemeSizeScaler).CopyForDPI(dpi),
+		fontNormal:     sm.fontNormal, // DPI scaling handled within Font
+		fontBold:       sm.fontBold,   // DPI scaling handled within Font
 	}
+
+	result.buildDependentSizes()
 
 	return result
 }
@@ -243,23 +241,33 @@ func newMenuSharedMetrics(window Window) *menuSharedMetrics {
 		return nil
 	}
 
-	sm.combinedChevronSize = sm.chevronSize
-	addMargins(&sm.combinedChevronSize, sm.chevronMargins)
-
 	sm.contentMargins = sm.itemMargins
 	sm.contentMargins.LeftWidth = bgBorderSize
 	sm.contentMargins.RightWidth = borderSize
 
-	sm.combinedCheckSize = sm.checkSize
-	addMargins(&sm.combinedCheckSize, sm.checkMargins)
-
-	sm.combinedCheckBgSize = sm.combinedCheckSize
-	addMargins(&sm.combinedCheckBgSize, sm.checkBgMargins)
-
-	sm.combinedSeparatorSize = sm.separatorSize
-	addMargins(&sm.combinedSeparatorSize, sm.itemMargins)
+	sm.buildDependentSizes()
 
 	return sm
+}
+
+func (sm *menuSharedMetrics) buildDependentSizes() {
+	if checkSize, err := sm.checkSize.partSize(); err == nil {
+		sm.combinedCheckSize = checkSize
+		addMargins(&sm.combinedCheckSize, sm.checkMargins)
+
+		sm.gutterSize = sm.combinedCheckSize
+		addMargins(&sm.gutterSize, sm.checkBgMargins)
+	}
+
+	if chevronSize, err := sm.chevronSize.partSize(); err == nil {
+		sm.combinedChevronSize = chevronSize
+		addMargins(&sm.combinedChevronSize, sm.chevronMargins)
+	}
+
+	if separatorSize, err := sm.separatorSize.partSize(); err == nil {
+		sm.combinedSeparatorSize = separatorSize
+		addMargins(&sm.combinedSeparatorSize, sm.itemMargins)
+	}
 }
 
 // measure measures an entire menu item, delegating measurement of the content
@@ -328,16 +336,16 @@ func (ml *menuItemLayout) measure(w Window, odi *ownerDrawnMenuItemInfo) (uint32
 	ml.combinedContentSize.CX += sm.combinedChevronSize.CX
 
 	// combinedContentItemSize is the accumulated size of everything to the right
-	// of the checkbox area.
+	// of the gutter.
 	combinedContentItemSize := ml.combinedContentSize
 	addMargins(&combinedContentItemSize, sm.itemMargins)
 
-	// Start with the width of the entire checkbox area, including background,
-	// and then add in the width of the rest of the menu item.
-	cx := uint32(sm.combinedCheckBgSize.CX + combinedContentItemSize.CX)
+	// Start with the width of the entire gutter, and then add in the width of the
+	// rest of the menu item.
+	cx := uint32(sm.gutterSize.CX + combinedContentItemSize.CX)
 
 	// On the Y-axis, we want the maximum height across checkbox, content, and chevron.
-	cy := uint32(Max(sm.combinedCheckBgSize.CY, combinedContentItemSize.CY, sm.combinedChevronSize.CY))
+	cy := uint32(Max(sm.gutterSize.CY, combinedContentItemSize.CY, sm.combinedChevronSize.CY))
 
 	return cx, cy
 }
@@ -352,21 +360,20 @@ func (ml *menuItemLayout) layout(sm *menuSharedMetrics, rect *win.RECT) {
 	y := rect.Top
 	h := rect.Height()
 
+	// Gutter: Background extending from the left of the item, across the checkbox
+	// background (including margins). Full height.
+	ml.gutterRect = win.RECT{x, y, x + sm.gutterSize.CX, y + h}
+
 	// Checkbox background: Leftmost item, centered vertically.
-	offsetVCenter := (h - sm.combinedCheckBgSize.CY) / 2
-	ml.checkboxBgRect = win.RECT{x, y + offsetVCenter, x + sm.combinedCheckBgSize.CX, y + sm.combinedCheckBgSize.CY + offsetVCenter}
-	x += ml.checkboxBgRect.Width()
-	stripMargins(&ml.checkboxBgRect, sm.checkBgMargins)
+	offsetVCenter := (h - sm.combinedCheckSize.CY) / 2
+	ml.checkboxBgRect = win.RECT{x, y + offsetVCenter, x + sm.combinedCheckSize.CX, y + sm.combinedCheckSize.CY + offsetVCenter}
 
 	// Checkbox: Rendered overtop of checkbox background. Just strip margins
 	// from checkboxBgRect to obtain the checkboxRect.
 	ml.checkboxRect = ml.checkboxBgRect
 	stripMargins(&ml.checkboxRect, sm.checkMargins)
 
-	// Gutter: Background extending from the left of the item, across the checkbox
-	// background and the left content margins. Full height.
-	x += sm.contentMargins.LeftWidth
-	ml.gutterRect = win.RECT{rect.Left, y, x, y + h}
+	x += ml.gutterRect.Width()
 
 	// Separator: Starts to the right of gutter, extends all the way to the right.
 	// Centered vertically.
