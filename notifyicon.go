@@ -14,20 +14,72 @@ import (
 	"unsafe"
 
 	"github.com/tailscale/win"
+	"golang.org/x/sys/windows"
 )
+
+const notifyIconWindowClass = `WalkNotifyIconSink`
 
 var (
-	notifyIcons   = map[*NotifyIcon]struct{}{}
-	notifyIconIDs = map[uint16]*NotifyIcon{}
+	notifyIcons            = map[*NotifyIcon]struct{}{}
+	notifyIconIDs          = map[uint16]*NotifyIcon{}
+	notifyIconSharedWindow *notifyIconWindow
+	taskbarCreatedMsgId    uint32
 )
 
-func notifyIconWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) (result uintptr) {
-	ni := notifyIconIDs[win.HIWORD(uint32(lParam))]
-	if ni == nil {
-		return win.DefWindowProc(hwnd, msg, wParam, lParam)
+func init() {
+	AppendToWalkInit(func() {
+		MustRegisterWindowClass(notifyIconWindowClass)
+		taskbarCreatedMsgId = win.RegisterWindowMessage(syscall.StringToUTF16Ptr("TaskbarCreated"))
+	})
+}
+
+type notifyIconWindow struct {
+	WindowBase
+	owner *NotifyIcon // nil for non-GUID notifications
+}
+
+func (niw *notifyIconWindow) Dispose() {
+	niw.owner = nil
+	niw.WindowBase.Dispose()
+}
+
+func (niw *notifyIconWindow) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
+	switch msg {
+	case notifyIconMessageId:
+		lp32 := uint32(lParam)
+		ni := niw.owner
+		if ni == nil {
+			// No GUID, try resolving via integral ID.
+			ni = notifyIconIDs[win.HIWORD(lp32)]
+			if ni == nil {
+				// We don't need to call DefWindowProc because this is an app-defined message.
+				return 0
+			}
+		}
+
+		return ni.wndProc(hwnd, win.LOWORD(lp32), wParam)
+	case taskbarCreatedMsgId:
+		reAddAllNotifyIcons()
+	case win.WM_DISPLAYCHANGE:
+		// Ensure (0,0) placement so that we always reside on the primary monitor.
+		win.SetWindowPos(hwnd, 0, 0, 0, 0, 0, win.SWP_HIDEWINDOW|win.SWP_NOACTIVATE|win.SWP_NOSIZE|win.SWP_NOZORDER)
+	case win.WM_DPICHANGED:
+		if ni := niw.owner; ni != nil {
+			ni.applyDPI()
+		} else {
+			// Shared window. Update all icons that have integral IDs.
+			for _, ni := range notifyIconIDs {
+				ni.applyDPI()
+			}
+		}
+	default:
 	}
 
-	switch win.LOWORD(uint32(lParam)) {
+	return niw.WindowBase.WndProc(hwnd, msg, wParam, lParam)
+}
+
+func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) (result uintptr) {
+	switch msg {
 	case win.WM_LBUTTONDOWN:
 		ni.mouseDownPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), LeftButton)
 
@@ -52,8 +104,6 @@ func notifyIconWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) (resul
 		// See https://web.archive.org/web/20000205130053/http://support.microsoft.com/support/kb/articles/q135/7/88.asp
 		win.SetForegroundWindow(hwnd)
 
-		ni.applyDPI()
-
 		actionId := uint16(win.TrackPopupMenuEx(
 			ni.contextMenu.hMenu,
 			win.TPM_NOANIMATION|win.TPM_RETURNCMD,
@@ -70,14 +120,13 @@ func notifyIconWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) (resul
 				action.raiseTriggered()
 			}
 		}
-
-		return 0
 	case win.NIN_BALLOONUSERCLICK:
 		ni.reEnableToolTip()
 		ni.messageClickedPublisher.Publish()
 	}
 
-	return win.DefWindowProc(hwnd, msg, wParam, lParam)
+	// We don't need to call DefWindowProc because we are handling an app-defined message.
+	return 0
 }
 
 func isTaskbarPresent() bool {
@@ -96,26 +145,100 @@ func copyStringToSlice(dst []uint16, src string) error {
 	return nil
 }
 
+// notification icons are uniquely identified by the shell via one of two ways:
+// either a (win.HWND, uint32) pair, or a GUID. shellNotificationIcon supports
+// both ID schemes.
 type shellNotificationIcon struct {
-	id   *uint32
-	hWnd win.HWND
+	window *notifyIconWindow
+	guid   *windows.GUID
+	id     *uint32
 }
 
-func newShellNotificationIcon(hWnd win.HWND) (*shellNotificationIcon, error) {
-	shellIcon := &shellNotificationIcon{hWnd: hWnd}
+func newNotificationIconWindow() (*notifyIconWindow, error) {
+	niw := new(notifyIconWindow)
+	niwCfg := windowCfg{
+		Window:    niw,
+		ClassName: notifyIconWindowClass,
+		Style:     win.WS_OVERLAPPEDWINDOW,
+		// Always create the window at the origin, thus ensuring that the window
+		// resides on the desktop's primary monitor, which is the same monitor where
+		// the taskbar notification area resides. This ensures that the window's
+		// DPI setting matches that of the notification area.
+		Bounds: Rectangle{
+			X: 0, Y: 0, Width: 1, Height: 1,
+		},
+	}
+	if err := initWindowWithCfg(&niwCfg); err != nil {
+		return nil, err
+	}
+	return niw, nil
+}
+
+// getWindowForNotifyIcon returns an appropriate notifyIconWindow for use with a
+// notification icon. When guid is non-nil, a new notifyIconWindow is created.
+// When guid is nil, a shared notifyIconWindow is returned. This is necessary
+// because the notify icon window procedure can only differentiate between
+// uint32 IDs, not GUIDs. In the latter case we need to give each notification
+// icon its own window.
+func getWindowForNotifyIcon(guid *windows.GUID) (*notifyIconWindow, error) {
+	if guid != nil {
+		return newNotificationIconWindow()
+	}
+
+	if notifyIconSharedWindow == nil {
+		niw, err := newNotificationIconWindow()
+		if err != nil {
+			return nil, err
+		}
+		notifyIconSharedWindow = niw
+	}
+
+	return notifyIconSharedWindow, nil
+}
+
+func newShellNotificationIcon(guid *windows.GUID) (*shellNotificationIcon, error) {
+	w, err := getWindowForNotifyIcon(guid)
+	if err != nil {
+		return nil, err
+	}
+
+	shellIcon := &shellNotificationIcon{window: w, guid: guid}
 	if !isTaskbarPresent() {
 		return shellIcon, nil
 	}
 
+	if guid != nil {
+		// If we're using a GUID, an add operation can fail if a previous instance
+		// using this GUID terminated abnormally and its notification icon was left
+		// behind on the taskbar. Preemptively delete any pre-existing icon.
+		if delCmd := shellIcon.newCmd(win.NIM_DELETE); delCmd != nil {
+			// The previous instance would have used a different, now-defunct HWND, so
+			// we can't use one here...
+			delCmd.nid.HWnd = win.HWND(0)
+			// We expect delCmd.execute() to fail if there isn't a pre-existing icon,
+			// so no error checking for this call.
+			delCmd.execute()
+		}
+	}
+
 	// Add our notify icon to the status area and make sure it is hidden.
-	cmd := shellIcon.newCmd(win.NIM_ADD)
-	cmd.setCallbackMessage(notifyIconMessageId)
-	cmd.setVisible(false)
-	if err := cmd.execute(); err != nil {
+	addCmd := shellIcon.newCmd(win.NIM_ADD)
+	addCmd.setCallbackMessage(notifyIconMessageId)
+	addCmd.setVisible(false)
+	if err := addCmd.execute(); err != nil {
 		return nil, err
 	}
 
 	return shellIcon, nil
+}
+
+func (i *shellNotificationIcon) setOwner(ni *NotifyIcon) {
+	// Only icons identified via GUID use the owner field; non-GUID icons share
+	// the same window and thus need to be looked up via notifyIconIDs.
+	if i.guid == nil {
+		return
+	}
+	i.window.owner = ni
 }
 
 func (i *shellNotificationIcon) Dispose() error {
@@ -125,8 +248,12 @@ func (i *shellNotificationIcon) Dispose() error {
 		}
 	}
 
-	i.id = nil
-	i.hWnd = 0
+	if i.guid != nil {
+		// GUID icons get their own window, so we need to dispose of it.
+		i.window.Dispose()
+	}
+
+	*i = shellNotificationIcon{}
 	return nil
 }
 
@@ -137,9 +264,10 @@ type niCmd struct {
 }
 
 // newCmd creates a niCmd for the specified operation (one of the win.NIM_*
-// constants). If the taskbar does not exist, it returns nil.
+// constants). If i does not yet have a unique identifier and op is not
+// win.NIM_ADD, newCmd returns nil.
 func (i *shellNotificationIcon) newCmd(op uint32) *niCmd {
-	if i.id == nil && op != win.NIM_ADD {
+	if i.guid == nil && i.id == nil && op != win.NIM_ADD {
 		return nil
 	}
 
@@ -147,12 +275,17 @@ func (i *shellNotificationIcon) newCmd(op uint32) *niCmd {
 		shellIcon: i,
 		op:        op,
 		nid: win.NOTIFYICONDATA{
-			HWnd:   i.hWnd,
+			CbSize: uint32(unsafe.Sizeof(win.NOTIFYICONDATA{})),
+			HWnd:   i.window.WindowBase.hWnd,
 			UFlags: win.NIF_SHOWTIP,
 		},
 	}
-	cmd.nid.CbSize = uint32(unsafe.Sizeof(cmd.nid))
-	if i.id != nil {
+
+	switch {
+	case i.guid != nil:
+		cmd.nid.UFlags |= win.NIF_GUID
+		cmd.nid.GuidItem = syscall.GUID(*(i.guid))
+	case i.id != nil:
 		cmd.nid.UID = *(i.id)
 	}
 
@@ -237,8 +370,10 @@ func (cmd *niCmd) execute() error {
 		return nil
 	}
 
-	newId := cmd.nid.UID
-	cmd.shellIcon.id = &newId
+	if cmd.shellIcon.guid == nil {
+		newId := cmd.nid.UID
+		cmd.shellIcon.id = &newId
+	}
 
 	// When executing an add, we also need to do a NIM_SETVERSION.
 	verCmd := *cmd
@@ -251,7 +386,6 @@ func (cmd *niCmd) execute() error {
 // NotifyIcon represents an icon in the taskbar notification area.
 type NotifyIcon struct {
 	shellIcon                *shellNotificationIcon
-	lastDPI                  int
 	contextMenu              *Menu
 	icon                     Image
 	toolTip                  string
@@ -264,10 +398,24 @@ type NotifyIcon struct {
 
 // NewNotifyIcon creates and returns a new NotifyIcon.
 //
-// The NotifyIcon is initially not visible.
-func NewNotifyIcon(form Form) (*NotifyIcon, error) {
-	fb := form.AsFormBase()
-	shellIcon, err := newShellNotificationIcon(fb.hWnd)
+// The NotifyIcon is initially invisible.
+func NewNotifyIcon() (*NotifyIcon, error) {
+	return newNotifyIcon(nil)
+}
+
+// NewNotifyIcon creates and returns a new NotifyIcon associated with guid.
+//
+// The NotifyIcon is initially invisible.
+func NewNotifyIconWithGUID(guid windows.GUID) (*NotifyIcon, error) {
+	var zeroGUID windows.GUID
+	if guid == zeroGUID {
+		return nil, os.ErrInvalid
+	}
+	return newNotifyIcon(&guid)
+}
+
+func newNotifyIcon(guid *windows.GUID) (*NotifyIcon, error) {
+	shellIcon, err := newShellNotificationIcon(guid)
 	if err != nil {
 		return nil, err
 	}
@@ -277,13 +425,14 @@ func NewNotifyIcon(form Form) (*NotifyIcon, error) {
 	if err != nil {
 		return nil, err
 	}
-	menu.window = form
+	menu.window = shellIcon.window
 
 	ni := &NotifyIcon{
 		shellIcon:   shellIcon,
 		contextMenu: menu,
 	}
 
+	shellIcon.setOwner(ni)
 	menu.getDPI = ni.DPI
 
 	notifyIcons[ni] = struct{}{}
@@ -295,12 +444,17 @@ func NewNotifyIcon(form Form) (*NotifyIcon, error) {
 }
 
 func (ni *NotifyIcon) DPI() int {
-	fakeWb := WindowBase{hWnd: win.FindWindow(syscall.StringToUTF16Ptr("Shell_TrayWnd"), syscall.StringToUTF16Ptr(""))}
-	return fakeWb.DPI()
+	return ni.shellIcon.window.DPI()
 }
 
 func (ni *NotifyIcon) isDefunct() bool {
-	return ni.shellIcon.hWnd == 0
+	return ni.shellIcon == nil
+}
+
+func reAddAllNotifyIcons() {
+	for ni := range notifyIcons {
+		ni.reAddToTaskbar()
+	}
 }
 
 func (ni *NotifyIcon) reAddToTaskbar() {
@@ -329,8 +483,6 @@ func (ni *NotifyIcon) reAddToTaskbar() {
 		// Add the new ID
 		notifyIconIDs[uint16(*newID)] = ni
 	}
-
-	return
 }
 
 func (ni *NotifyIcon) reEnableToolTip() error {
@@ -345,21 +497,9 @@ func (ni *NotifyIcon) reEnableToolTip() error {
 }
 
 func (ni *NotifyIcon) applyDPI() {
-	dpi := ni.DPI()
-	if dpi == ni.lastDPI {
-		return
-	}
-	ni.lastDPI = dpi
-	for _, action := range ni.contextMenu.actions.actions {
-		if action.image != nil {
-			ni.contextMenu.onActionChanged(action)
-		}
-	}
-	icon := ni.icon
-	ni.icon = nil
-	if icon != nil {
-		ni.SetIcon(icon)
-	}
+	// Forcibly set the icon even though ni.icon isn't changing. This will force
+	// the shell to redraw the icon using the new DPI.
+	ni.forciblySetIcon(ni.icon)
 }
 
 // Dispose releases the operating system resources associated with the
@@ -376,10 +516,15 @@ func (ni *NotifyIcon) Dispose() error {
 	if err := ni.shellIcon.Dispose(); err != nil {
 		return err
 	}
+	ni.shellIcon = nil
 
 	delete(notifyIcons, ni)
 	if nid != nil {
 		delete(notifyIconIDs, uint16(*nid))
+		if len(notifyIconIDs) == 0 && notifyIconSharedWindow != nil {
+			notifyIconSharedWindow.Dispose()
+			notifyIconSharedWindow = nil
+		}
 	}
 
 	return nil
@@ -471,6 +616,15 @@ func (ni *NotifyIcon) Icon() Image {
 func (ni *NotifyIcon) SetIcon(icon Image) error {
 	if icon == ni.icon {
 		return nil
+	}
+
+	return ni.forciblySetIcon(icon)
+}
+
+// forciblySetIcon sets ni's icon even when icon == ni.icon.
+func (ni *NotifyIcon) forciblySetIcon(icon Image) error {
+	if icon == nil {
+		return os.ErrInvalid
 	}
 
 	if cmd := ni.shellIcon.newCmd(win.NIM_MODIFY); cmd != nil {

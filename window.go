@@ -2203,10 +2203,6 @@ func defaultWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) (result u
 		}
 	}()
 
-	if msg == notifyIconMessageId {
-		return notifyIconWndProc(hwnd, msg, wParam, lParam)
-	}
-
 	wi := windowFromHandle(hwnd)
 	if wi == nil {
 		return win.DefWindowProc(hwnd, msg, wParam, lParam)
