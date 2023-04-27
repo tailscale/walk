@@ -12,7 +12,6 @@ import (
 	"math"
 	"sync"
 	"syscall"
-	"time"
 	"unsafe"
 
 	"github.com/tailscale/win"
@@ -33,14 +32,12 @@ var (
 
 	syncMsgId                 uint32
 	taskbarButtonCreatedMsgId uint32
-	taskbarCreatedMsgId       uint32
 )
 
 func init() {
 	AppendToWalkInit(func() {
 		syncMsgId = win.RegisterWindowMessage(syscall.StringToUTF16Ptr("WalkSync"))
 		taskbarButtonCreatedMsgId = win.RegisterWindowMessage(syscall.StringToUTF16Ptr("TaskbarButtonCreated"))
-		taskbarCreatedMsgId = win.RegisterWindowMessage(syscall.StringToUTF16Ptr("TaskbarCreated"))
 	})
 }
 
@@ -856,21 +853,6 @@ func (fb *FormBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) u
 
 		fb.SetIcon(fb.icon)
 
-		time.AfterFunc(time.Second, func() {
-			if fb.hWnd == 0 {
-				return
-			}
-			fb.Synchronize(func() {
-				for ni := range notifyIcons {
-					// We do this on all NotifyIcons, not just ones attached to this form or descendents, because
-					// the notify icon might be on a different screen, and since it can't get notifications itself
-					// we hope that one of the forms did for it. We also have to delay it by a second, because the
-					// tray usually gets resized sometime after us. This is a nasty hack!
-					ni.applyDPI()
-				}
-			})
-		})
-
 	case win.WM_SYSCOMMAND:
 		if wParam == win.SC_CLOSE {
 			fb.closeReason = CloseReasonUser
@@ -883,11 +865,6 @@ func (fb *FormBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) u
 		// Check that the OS is Win 7 or later (Win 7 is v6.1).
 		if fb.progressIndicator == nil && (major > 6 || (major == 6 && minor > 0)) {
 			fb.progressIndicator, _ = newTaskbarList3(fb.hWnd)
-		}
-
-	case taskbarCreatedMsgId:
-		for ni := range notifyIcons {
-			ni.reAddToTaskbar()
 		}
 	}
 
