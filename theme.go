@@ -307,7 +307,9 @@ type themeSizeScalableMetric struct {
 func (tssm *themeSizeScalableMetric) CopyForDPI(dpi int) ThemeSizeMetric {
 	newSize := scaleSIZE(tssm.themeSizeMetric.size, float64(dpi)/float64(tssm.dpi))
 	// The copy should not satisfy ThemeSizeScaler, so we return a *themeSizeMetric.
-	return &themeSizeMetric{iface: tssm, size: newSize}
+	result := &themeSizeMetric{size: newSize}
+	result.setInterface(result)
+	return result
 }
 
 type themeTrueSizeMetric struct {
