@@ -411,46 +411,46 @@ type calcTextSizeInfo struct {
 // WindowBase implements many operations common to all Windows.
 type WindowBase struct {
 	nopActionListObserver
-	group                     *WindowGroup
-	window                    Window
-	form                      Form
-	hWnd                      win.HWND
-	origWndProcPtr            uintptr
-	name                      string
-	font                      *Font
-	hFont                     win.HFONT
-	contextMenu               *Menu
-	shortcutActions           *ActionList
-	disposables               []Disposable
-	disposingPublisher        EventPublisher
-	dropFilesPublisher        DropFilesEventPublisher
-	keyDownPublisher          KeyEventPublisher
-	keyPressPublisher         KeyEventPublisher
-	keyUpPublisher            KeyEventPublisher
-	mouseDownPublisher        MouseEventPublisher
-	mouseUpPublisher          MouseEventPublisher
-	mouseMovePublisher        MouseEventPublisher
-	mouseWheelPublisher       MouseEventPublisher
-	boundsChangedPublisher    EventPublisher
-	sizeChangedPublisher      EventPublisher
-	maxSize96dpi              Size
-	minSize96dpi              Size
-	background                Brush
-	cursor                    Cursor
-	name2Property             map[string]Property
-	enabledProperty           Property
-	enabledChangedPublisher   EventPublisher
-	visibleProperty           Property
-	visibleChangedPublisher   EventPublisher
-	focusedProperty           Property
-	focusedChangedPublisher   EventPublisher
-	calcTextSizeInfo2TextSize map[calcTextSizeInfo]Size // in native pixels
-	suspended                 bool
-	visible                   bool
-	enabled                   bool
-	acc                       *Accessibility
-	themes                    map[string]*Theme
-	menuSharedMetrics96DPI    *menuSharedMetrics
+	group                       *WindowGroup
+	window                      Window
+	form                        Form
+	hWnd                        win.HWND
+	origWndProcPtr              uintptr
+	name                        string
+	font                        *Font
+	hFont                       win.HFONT
+	contextMenu                 *Menu
+	shortcutActions             *ActionList
+	disposables                 []Disposable
+	disposingPublisher          EventPublisher
+	dropFilesPublisher          DropFilesEventPublisher
+	keyDownPublisher            KeyEventPublisher
+	keyPressPublisher           KeyEventPublisher
+	keyUpPublisher              KeyEventPublisher
+	mouseDownPublisher          MouseEventPublisher
+	mouseUpPublisher            MouseEventPublisher
+	mouseMovePublisher          MouseEventPublisher
+	mouseWheelPublisher         MouseEventPublisher
+	boundsChangedPublisher      EventPublisher
+	sizeChangedPublisher        EventPublisher
+	maxSize96dpi                Size
+	minSize96dpi                Size
+	background                  Brush
+	cursor                      Cursor
+	name2Property               map[string]Property
+	enabledProperty             Property
+	enabledChangedPublisher     EventPublisher
+	visibleProperty             Property
+	visibleChangedPublisher     EventPublisher
+	focusedProperty             Property
+	focusedChangedPublisher     EventPublisher
+	calcTextSizeInfo2TextSize   map[calcTextSizeInfo]Size // in native pixels
+	suspended                   bool
+	visible                     bool
+	enabled                     bool
+	acc                         *Accessibility
+	themes                      map[string]*Theme
+	menuSharedMetricsInitialDPI *menuSharedMetrics
 	// onHelp is the possibly nil func passed to WindowBase.SetHelp.
 	onHelp func(hwnd win.HWND, wb *WindowBase, hi *win.HELPINFO) (handled bool)
 }
@@ -928,8 +928,8 @@ func (wb *WindowBase) Dispose() {
 		t.close()
 	}
 
-	if wb.menuSharedMetrics96DPI != nil {
-		dpicache.Delete(wb.menuSharedMetrics96DPI)
+	if wb.menuSharedMetricsInitialDPI != nil {
+		dpicache.Delete(wb.menuSharedMetricsInitialDPI)
 	}
 
 	if hWnd != 0 {
@@ -2375,10 +2375,10 @@ func (wb *WindowBase) handleWMCTLCOLOR(wParam, lParam uintptr) uintptr {
 // menuSharedMetrics obtains menuSharedMetrics associated with wb, scaled to
 // wb's current DPI.
 func (wb *WindowBase) menuSharedMetrics() *menuSharedMetrics {
-	if wb.menuSharedMetrics96DPI == nil {
-		wb.menuSharedMetrics96DPI = newMenuSharedMetrics(wb)
+	if wb.menuSharedMetricsInitialDPI == nil {
+		wb.menuSharedMetricsInitialDPI = newMenuSharedMetrics(wb)
 	}
-	return dpicache.InstanceForDPI(wb.menuSharedMetrics96DPI, wb.DPI())
+	return dpicache.InstanceForDPI(wb.menuSharedMetricsInitialDPI, wb.DPI())
 }
 
 // WndProc is the window procedure of the window.
@@ -2583,9 +2583,9 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 		// Destroy any cached theme information. The new information will be
 		// reloaded lazily.
 
-		if wb.menuSharedMetrics96DPI != nil {
-			dpicache.Delete(wb.menuSharedMetrics96DPI)
-			wb.menuSharedMetrics96DPI = nil
+		if wb.menuSharedMetricsInitialDPI != nil {
+			dpicache.Delete(wb.menuSharedMetricsInitialDPI)
+			wb.menuSharedMetricsInitialDPI = nil
 		}
 
 		for _, v := range wb.themes {
