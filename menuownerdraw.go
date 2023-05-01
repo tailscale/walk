@@ -140,18 +140,14 @@ func (sm *menuSharedMetrics) DPI() int {
 }
 
 // CopyForDPI creates a new menuSharedMetrics whose contents have been scaled
-// for use at dpi. sm is expected to be 96dpi (100%).
+// for use at dpi.
 func (sm *menuSharedMetrics) CopyForDPI(dpi int) *menuSharedMetrics {
-	if sm.dpi != 96 {
-		panic("CopyForDPI should only be called on menuSharedMetrics at 96dpi!")
-	}
-
 	result := &menuSharedMetrics{
 		dpi:            dpi,
 		checkMargins:   sm.checkMargins,   // checkMargins is not scaled
 		checkBgMargins: sm.checkBgMargins, // checkBgMargins is not scaled
 		itemMargins:    sm.itemMargins,    // itemMargins is not scaled
-		contentMargins: MARGINSFrom96DPI(sm.contentMargins, dpi),
+		contentMargins: scaleMARGINS(sm.contentMargins, float64(dpi)/float64(sm.dpi)),
 		chevronMargins: sm.chevronMargins, // chevronMargins is not scaled
 		checkSize:      sm.checkSize.(ThemeSizeScaler).CopyForDPI(dpi),
 		chevronSize:    sm.chevronSize.(ThemeSizeScaler).CopyForDPI(dpi),
@@ -170,7 +166,8 @@ func (sm *menuSharedMetrics) CopyForDPI(dpi int) *menuSharedMetrics {
 // other pixel densities may be obtained by calling CopyForDPI on the metrics
 // returned by this function.
 func newMenuSharedMetrics(window Window) *menuSharedMetrics {
-	sm := &menuSharedMetrics{dpi: 96}
+	dpi := window.DPI()
+	sm := &menuSharedMetrics{dpi: dpi}
 
 	theme, err := window.ThemeForClass(win.VSCLASS_MENU)
 	if err != nil {
@@ -230,13 +227,13 @@ func newMenuSharedMetrics(window Window) *menuSharedMetrics {
 	// A menu's default item is expected to be drawn using bold text.
 	// Themes do not provide a specific bold font for menus, so we make one by
 	// adjusting fontNormal.
-	lf := sm.fontNormal.LOGFONTForDPI(96)
+	lf := sm.fontNormal.LOGFONTForDPI(dpi)
 	if lf == nil {
 		return nil
 	}
 
 	lf.LfWeight = win.FW_BOLD
-	sm.fontBold, err = newFontFromLOGFONT(lf, 96)
+	sm.fontBold, err = newFontFromLOGFONT(lf, dpi)
 	if err != nil {
 		return nil
 	}
@@ -378,7 +375,7 @@ func (ml *menuItemLayout) layout(sm *menuSharedMetrics, rect *win.RECT) {
 	// Separator: Starts to the right of gutter, extends all the way to the right.
 	// Centered vertically.
 	offsetVCenter = (h - sm.combinedSeparatorSize.CY) / 2
-	ml.separatorRect = win.RECT{x, y + offsetVCenter, rect.Right, rect.Bottom + offsetVCenter}
+	ml.separatorRect = win.RECT{x, y + offsetVCenter, rect.Right, y + sm.combinedSeparatorSize.CY + offsetVCenter}
 	stripMargins(&ml.separatorRect, sm.itemMargins)
 
 	// Content: Start to the right of gutter, extend all the way to the right.

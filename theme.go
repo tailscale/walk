@@ -84,13 +84,14 @@ func (t *Theme) partSize(partID, stateID int32, rect *win.RECT, esize win.THEMES
 		return result, nil
 	}
 
-	tsom := new(themeSizeOriginalMetric)
-	if hr := win.GetThemePartSize(t.htheme, win.HDC(0), partID, stateID, rect, esize, &tsom.themeSizeMetric.size); win.FAILED(hr) {
+	tssm := new(themeSizeScalableMetric)
+	if hr := win.GetThemePartSize(t.htheme, win.HDC(0), partID, stateID, rect, esize, &tssm.themeSizeMetric.size); win.FAILED(hr) {
 		return nil, errorFromHRESULT("GetThemePartSize", hr)
 	}
 
-	tsom.setInterface(tsom)
-	return tsom, nil
+	tssm.dpi = t.wb.DPI()
+	tssm.setInterface(tssm)
+	return tssm, nil
 }
 
 // Integer obtains an integral property as resolved by partID, stateID and propID.
@@ -237,8 +238,8 @@ func (t *Theme) SysFont(fontID int32) (*Font, error) {
 		return nil, errorFromHRESULT("GetThemeSysFont", hr)
 	}
 
-	// GetThemeSysFont appears to always use 96DPI, despite its documentation.
-	return newFontFromLOGFONT(&lf, 96)
+	// GetThemeSysFont appears to always use the screen DPI, despite its documentation.
+	return newFontFromLOGFONT(&lf, screenDPI())
 }
 
 // isTrueSize determines whether the theme component with the given partID and
@@ -297,20 +298,20 @@ func (tsm *themeSizeMetric) partSize() (win.SIZE, error) {
 	return tsm.size, nil
 }
 
-// themeSizeOriginalMetric is identical to themeSizeMetric except that it
-// also satisfies ThemeSizeScaler.
-type themeSizeOriginalMetric struct {
+// themeSizeScalableMetric also satisfies ThemeSizeScaler.
+type themeSizeScalableMetric struct {
 	themeSizeMetric
+	dpi int
 }
 
-func (tsom *themeSizeOriginalMetric) CopyForDPI(dpi int) ThemeSizeMetric {
-	newSize := SIZEFrom96DPI(tsom.themeSizeMetric.size, dpi)
+func (tssm *themeSizeScalableMetric) CopyForDPI(dpi int) ThemeSizeMetric {
+	newSize := scaleSIZE(tssm.themeSizeMetric.size, float64(dpi)/float64(tssm.dpi))
 	// The copy should not satisfy ThemeSizeScaler, so we return a *themeSizeMetric.
-	return &themeSizeMetric{iface: tsom, size: newSize}
+	return &themeSizeMetric{iface: tssm, size: newSize}
 }
 
 type themeTrueSizeMetric struct {
-	themeSizeOriginalMetric
+	themeSizeMetric
 	theme   *Theme
 	partID  int32
 	stateID int32
@@ -321,7 +322,7 @@ type themeTrueSizeMetric struct {
 func (ttsm *themeTrueSizeMetric) partSize() (result win.SIZE, err error) {
 	// True-sized metrics must query for their part size at every DPI.
 	// We cache the result in the themeSizeMetric's size field.
-	pSize := &ttsm.themeSizeOriginalMetric.themeSizeMetric.size
+	pSize := &ttsm.themeSizeMetric.size
 	var zero win.SIZE
 	if *pSize != zero {
 		return *pSize, nil
@@ -337,6 +338,6 @@ func (ttsm *themeTrueSizeMetric) partSize() (result win.SIZE, err error) {
 func (ttsm *themeTrueSizeMetric) CopyForDPI(dpi int) ThemeSizeMetric {
 	result := *ttsm
 	result.setInterface(&result)
-	result.themeSizeOriginalMetric.themeSizeMetric.size = win.SIZE{}
+	result.themeSizeMetric.size = win.SIZE{}
 	return &result
 }
