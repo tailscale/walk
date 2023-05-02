@@ -59,23 +59,28 @@ func (niw *notifyIconWindow) WndProc(hwnd win.HWND, msg uint32, wParam, lParam u
 
 		return ni.wndProc(hwnd, win.LOWORD(lp32), wParam)
 	case taskbarCreatedMsgId:
-		reAddAllNotifyIcons()
+		niw.forIcon(func(ni *NotifyIcon) { ni.reAddToTaskbar() })
 	case win.WM_DISPLAYCHANGE:
 		// Ensure (0,0) placement so that we always reside on the primary monitor.
 		win.SetWindowPos(hwnd, 0, 0, 0, 0, 0, win.SWP_HIDEWINDOW|win.SWP_NOACTIVATE|win.SWP_NOSIZE|win.SWP_NOZORDER)
 	case win.WM_DPICHANGED:
-		if ni := niw.owner; ni != nil {
-			ni.applyDPI()
-		} else {
-			// Shared window. Update all icons that have integral IDs.
-			for _, ni := range notifyIconIDs {
-				ni.applyDPI()
-			}
-		}
+		niw.forIcon(func(ni *NotifyIcon) { ni.applyDPI() })
 	default:
 	}
 
 	return niw.WindowBase.WndProc(hwnd, msg, wParam, lParam)
+}
+
+func (niw *notifyIconWindow) forIcon(fn func(*NotifyIcon)) {
+	if ni := niw.owner; ni != nil {
+		fn(ni)
+		return
+	}
+
+	// Shared window. Update all icons that have integral IDs.
+	for _, ni := range notifyIconIDs {
+		fn(ni)
+	}
 }
 
 func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) (result uintptr) {
@@ -449,12 +454,6 @@ func (ni *NotifyIcon) DPI() int {
 
 func (ni *NotifyIcon) isDefunct() bool {
 	return ni.shellIcon == nil
-}
-
-func reAddAllNotifyIcons() {
-	for ni := range notifyIcons {
-		ni.reAddToTaskbar()
-	}
 }
 
 func (ni *NotifyIcon) reAddToTaskbar() {
