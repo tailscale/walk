@@ -76,3 +76,58 @@ func (p *EventPublisher) Publish() {
 		}
 	}
 }
+
+type genericEventHandlerInfo[T any] struct {
+	handler GenericEventHandler[T]
+	once    bool
+}
+
+type GenericEventHandler[T any] func(param T)
+
+type GenericEvent[T any] struct {
+	handlers []genericEventHandlerInfo[T]
+}
+
+func (e *GenericEvent[T]) Attach(handler GenericEventHandler[T]) int {
+	handlerInfo := genericEventHandlerInfo[T]{handler, false}
+
+	for i, h := range e.handlers {
+		if h.handler == nil {
+			e.handlers[i] = handlerInfo
+			return i
+		}
+	}
+
+	e.handlers = append(e.handlers, handlerInfo)
+
+	return len(e.handlers) - 1
+}
+
+func (e *GenericEvent[T]) Detach(handle int) {
+	e.handlers[handle].handler = nil
+}
+
+func (e *GenericEvent[T]) Once(handler GenericEventHandler[T]) {
+	i := e.Attach(handler)
+	e.handlers[i].once = true
+}
+
+type GenericEventPublisher[T any] struct {
+	event GenericEvent[T]
+}
+
+func (p *GenericEventPublisher[T]) Event() *GenericEvent[T] {
+	return &p.event
+}
+
+func (p *GenericEventPublisher[T]) Publish(param T) {
+	for i, h := range p.event.handlers {
+		if h.handler != nil {
+			h.handler(param)
+
+			if h.once {
+				p.event.Detach(i)
+			}
+		}
+	}
+}
