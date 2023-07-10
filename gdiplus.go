@@ -434,7 +434,7 @@ func NewGDIPlusBitmapFromFile(filePath string) (*GDIPlusBitmap, error) {
 	return result, nil
 }
 
-// NewGDIPlusBitmapFromBitmap creates a GDIPlusBitmap that references the same
+// NewGDIPlusBitmapFromHBITMAP creates a GDIPlusBitmap that references the same
 // underlying memory as hbitmap.
 func NewGDIPlusBitmapFromHBITMAP(hbitmap win.HBITMAP) (*GDIPlusBitmap, error) {
 	if err := ensureGDIPlus(); err != nil {
@@ -447,6 +447,35 @@ func NewGDIPlusBitmapFromHBITMAP(hbitmap win.HBITMAP) (*GDIPlusBitmap, error) {
 	}
 
 	return result, nil
+}
+
+// NewGDIPlusBitmapFromHICON creates a GDIPlusBitmap based on hicon.
+func NewGDIPlusBitmapFromHICON(hicon win.HICON) (*GDIPlusBitmap, error) {
+	if err := ensureGDIPlus(); err != nil {
+		return nil, err
+	}
+
+	result := &GDIPlusBitmap{}
+	if status := win.GdipCreateBitmapFromHICON(hicon, &result.gpBitmap); status != win.Ok {
+		return nil, newError(fmt.Sprintf("GdipCreateBitmapFromHICON failed with status '%s'", status))
+	}
+
+	return result, nil
+}
+
+// NewGDIPlusBitmapFromIcon returns a GDIPlusBitmap based on img, scaled to dpi.
+func NewGDIPlusBitmapFromIcon(img Image, dpi int) (*GDIPlusBitmap, error) {
+	cachedIcon, err := iconCache.Icon(img, dpi)
+	if err != nil {
+		return nil, err
+	}
+
+	cachedHICON, err := cachedIcon.handleForDPIWithError(dpi)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewGDIPlusBitmapFromHICON(cachedHICON)
 }
 
 // NewGDIPlusBitmapFromStream creates a GDIPlusBitmap whose contents are
@@ -506,6 +535,21 @@ func (b *GDIPlusBitmap) Bitmap() (*Bitmap, error) {
 	return newBitmapFromHBITMAP(hBmp, dpi)
 }
 
+// Icon returns a Walk Icon based on b.
+func (b *GDIPlusBitmap) Icon() (*Icon, error) {
+	hIcon, err := b.HICON()
+	if err != nil {
+		return nil, err
+	}
+
+	dpi := 96
+	if br, err := b.GetDPI(); err == nil && br > 0 {
+		dpi = br
+	}
+
+	return NewIconFromHICONForDPI(hIcon, dpi)
+}
+
 // GetDPI returns b's pixel density, if that information is available.
 func (b *GDIPlusBitmap) GetDPI() (int, error) {
 	var hres float32
@@ -525,7 +569,7 @@ func (b *GDIPlusBitmap) SetDPI(dpi int) error {
 	return nil
 }
 
-// Bitmap returns a GDI HBITMAP that references the same memory as b.
+// HBITMAP returns a GDI HBITMAP that references the same memory as b.
 func (b *GDIPlusBitmap) HBITMAP() (win.HBITMAP, error) {
 	var hBmp win.HBITMAP
 	if status := win.GdipCreateHBITMAPFromBitmap(b.gpBitmap, &hBmp, 0); status != win.Ok {
@@ -533,6 +577,16 @@ func (b *GDIPlusBitmap) HBITMAP() (win.HBITMAP, error) {
 	}
 
 	return hBmp, nil
+}
+
+// HICON returns a GDI HICON based on b.
+func (b *GDIPlusBitmap) HICON() (win.HICON, error) {
+	var hIcon win.HICON
+	if status := win.GdipCreateHICONFromBitmap(b.gpBitmap, &hIcon); status != win.Ok {
+		return 0, newError(fmt.Sprintf("GdipCreateHICONFromBitmap failed with status '%s'", status))
+	}
+
+	return hIcon, nil
 }
 
 // GDIPlusFontFamily encapsulates an instance of a GDI+ Font Family.
