@@ -2,16 +2,30 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
 
 import (
+	"fmt"
 	"sync"
+	"syscall"
 	"unsafe"
 
 	"github.com/tailscale/win"
 )
+
+const msgWindowClassName = "Walk WindowGroup Message Window"
+
+var msgWndProcPtr uintptr
+
+func init() {
+	AppendToWalkInit(func() {
+		msgWndProcPtr = syscall.NewCallback(msgWndProc)
+		MustRegisterWindowClassWithWndProcPtr(msgWindowClassName, msgWndProcPtr)
+	})
+}
 
 // The global window group manager instance.
 var wgm windowGroupManager
@@ -96,10 +110,20 @@ type WindowGroup struct {
 	activeForm      Form
 	oleInit         bool
 	accPropServices *win.IAccPropServices
+	msgWindow       win.HWND
 
 	syncMutex           sync.Mutex
 	syncFuncs           []func()                   // Functions queued to run on the group's thread
 	layoutResultsByForm map[Form]*formLayoutResult // Layout computations queued for application on the group's thread
+}
+
+func msgWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) (result uintptr) {
+	if msg == syncMsgId {
+		wg := wgm.Group(win.GetCurrentThreadId())
+		wg.RunSynchronized()
+		return 0
+	}
+	return win.DefWindowProc(hwnd, msg, wParam, lParam)
 }
 
 // newWindowGroup returns a new window group for the given thread ID.
@@ -108,11 +132,30 @@ type WindowGroup struct {
 func newWindowGroup(threadID uint32, completion func(uint32)) *WindowGroup {
 	hr := win.OleInitialize()
 
+	msgWindow := win.CreateWindowEx(
+		0, // exStyle
+		syscall.StringToUTF16Ptr(msgWindowClassName),
+		syscall.StringToUTF16Ptr(fmt.Sprintf("%s for tid %d", msgWindowClassName, threadID)),
+		0,                 // style (hidden because win.WS_VISIBLE is absent)
+		win.CW_USEDEFAULT, // x
+		win.CW_USEDEFAULT, // y
+		win.CW_USEDEFAULT, // width
+		win.CW_USEDEFAULT, // height
+		win.HWND_MESSAGE,  // indicates that this window is a mere message processor
+		0,                 // hMenu
+		0,                 // hinstance
+		nil,               // lpParam
+	)
+	if msgWindow == 0 {
+		panic(fmt.Sprintf("unable to create msgWindow for tid %d: Win32 error %d", threadID, win.GetLastError()))
+	}
+
 	return &WindowGroup{
 		threadID:            threadID,
 		completion:          completion,
 		oleInit:             hr == win.S_OK || hr == win.S_FALSE,
 		layoutResultsByForm: make(map[Form]*formLayoutResult),
+		msgWindow:           msgWindow,
 	}
 }
 
@@ -194,8 +237,9 @@ func (g *WindowGroup) Done() {
 // Synchronize can be called from any thread.
 func (g *WindowGroup) Synchronize(f func()) {
 	g.syncMutex.Lock()
-	defer g.syncMutex.Unlock()
 	g.syncFuncs = append(g.syncFuncs, f)
+	g.syncMutex.Unlock()
+	win.PostMessage(g.msgWindow, syncMsgId, 0, 0)
 }
 
 // synchronizeLayout causes the given layout computations to be applied
@@ -209,6 +253,7 @@ func (g *WindowGroup) synchronizeLayout(result *formLayoutResult) {
 	g.syncMutex.Lock()
 	g.layoutResultsByForm[result.form] = result
 	g.syncMutex.Unlock()
+	win.PostMessage(g.msgWindow, syncMsgId, 0, 0)
 }
 
 // RunSynchronized runs all of the function calls queued by Synchronize
@@ -306,6 +351,10 @@ func (g *WindowGroup) dispose() {
 	if g.accPropServices != nil {
 		g.accPropServices.Release()
 		g.accPropServices = nil
+	}
+
+	if g.msgWindow != 0 && win.DestroyWindow(g.msgWindow) {
+		g.msgWindow = 0
 	}
 
 	if g.oleInit {

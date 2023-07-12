@@ -2116,8 +2116,6 @@ func (wb *WindowBase) BoundsChanged() *Event {
 // goroutine from inside a message loop.
 func (wb *WindowBase) Synchronize(f func()) {
 	wb.group.Synchronize(f)
-
-	win.PostMessage(wb.hWnd, syncMsgId, 0, 0)
 }
 
 // ThemeForClass obtains the theme associated with this Window whose class is
@@ -2145,8 +2143,6 @@ func (wb *WindowBase) ThemeForClass(themeClass string) (*Theme, error) {
 // will be replaced.
 func (wb *WindowBase) synchronizeLayout(result *formLayoutResult) {
 	wb.group.synchronizeLayout(result)
-
-	win.PostMessage(wb.hWnd, syncMsgId, 0, 0)
 }
 
 func (wb *WindowBase) ReadState() (string, error) {
