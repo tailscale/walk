@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows && walk_use_cgo
 // +build windows,walk_use_cgo
 
 package walk
@@ -14,7 +15,6 @@ import (
 
 // #include <windows.h>
 //
-// extern void shimRunSynchronized(uintptr_t fb);
 // extern unsigned char shimHandleKeyDown(uintptr_t fb, uintptr_t m);
 //
 // static int mainloop(uintptr_t handle_ptr, uintptr_t fb_ptr)
@@ -35,7 +35,6 @@ import (
 //             TranslateMessage(&m);
 //             DispatchMessage(&m);
 //         }
-//         shimRunSynchronized(fb_ptr);
 //     }
 //     return 0;
 // }
@@ -44,11 +43,6 @@ import "C"
 //export shimHandleKeyDown
 func shimHandleKeyDown(fb uintptr, msg uintptr) bool {
 	return (*FormBase)(unsafe.Pointer(fb)).handleKeyDown((*win.MSG)(unsafe.Pointer(msg)))
-}
-
-//export shimRunSynchronized
-func shimRunSynchronized(fb uintptr) {
-	(*FormBase)(unsafe.Pointer(fb)).group.RunSynchronized()
 }
 
 func (fb *FormBase) mainLoop() int {
