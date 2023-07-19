@@ -767,7 +767,9 @@ func (td *taskDialog) handleButtonClicked(id int32) bool {
 }
 
 func (td *taskDialog) handleRadioButtonClicked(id int32) {
-	td.opts.RadioButtons[td.radioIDToIndex(id)].clicked.Publish()
+	if pub := td.opts.RadioButtons[td.radioIDToIndex(id)].clicked; pub != nil {
+		pub.Publish()
+	}
 }
 
 func (td *taskDialog) configureUACButtons() {
