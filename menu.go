@@ -16,13 +16,14 @@ import (
 )
 
 type Menu struct {
-	hMenu              win.HMENU
-	window             Window
-	actions            *ActionList
-	getDPI             func() int
-	initPopupPublisher EventPublisher
-	sharedMetrics      *menuSharedMetrics  // shared theme metrics across all menus associated with the current window
-	perMenuMetrics     menuSpecificMetrics // per-menu metrics
+	hMenu                      win.HMENU
+	window                     Window
+	actions                    *ActionList
+	getDPI                     func() int
+	initPopupPublisher         EventPublisher
+	sharedMetrics              *menuSharedMetrics  // shared theme metrics across all menus associated with the current window
+	perMenuMetrics             menuSpecificMetrics // per-menu metrics
+	allowOwnerDrawInvalidation bool
 }
 
 func newMenuBar(window Window) (menu *Menu, _ error) {
@@ -130,6 +131,10 @@ func (m *Menu) IsDisposed() bool {
 // onInitPopup is invoked whenever m is about to be displayed as a popup menu.
 // window specifies the parent Window for which the menu is to be shown.
 func (m *Menu) onInitPopup(window Window) {
+	m.allowOwnerDrawInvalidation = true
+	defer func() {
+		m.allowOwnerDrawInvalidation = false
+	}()
 	m.initPopupPublisher.Publish()
 	m.perMenuMetrics.reset()
 	m.updateItemsForWindow(window)
@@ -207,13 +212,20 @@ func (m *Menu) resolveDPI() int {
 
 func (m *Menu) initMenuItemInfoFromAction(mii *win.MENUITEMINFO, action *Action) {
 	mii.CbSize = uint32(unsafe.Sizeof(*mii))
-	mii.FMask = win.MIIM_FTYPE | win.MIIM_ID | win.MIIM_STATE
+	mii.FMask = win.MIIM_ID | win.MIIM_STATE
 
 	setString := true
 
 	switch {
 	case action.ownerDrawInfo != nil:
+		mii.FMask |= win.MIIM_FTYPE
 		mii.FType |= win.MFT_OWNERDRAW
+		if m.allowOwnerDrawInvalidation {
+			// Terrible hack: owner-drawn items won't be asked to recompute their sizes
+			// without specifying win.MIIM_BITMAP with a zero HbmpItem!
+			mii.FMask |= win.MIIM_BITMAP
+			mii.HbmpItem = 0
+		}
 		// Setting DwItemData to the pointer to our ownerDrawInfo enables
 		// (*WindowBase).WndProc to quickly resolve the menu item being drawn.
 		mii.FMask |= win.MIIM_DATA
@@ -226,6 +238,7 @@ func (m *Menu) initMenuItemInfoFromAction(mii *win.MENUITEMINFO, action *Action)
 			mii.HbmpItem = bmp.hBmp
 		}
 	case action.IsSeparator():
+		mii.FMask |= win.MIIM_FTYPE
 		mii.FType |= win.MFT_SEPARATOR
 		setString = false
 	default:
@@ -233,16 +246,13 @@ func (m *Menu) initMenuItemInfoFromAction(mii *win.MENUITEMINFO, action *Action)
 
 	if setString {
 		mii.FMask |= win.MIIM_STRING
-		mii.FType |= win.MFT_STRING
 		var text string
 		if s := action.shortcut; s.Key != 0 {
 			text = fmt.Sprintf("%s\t%s", action.text, s.String())
 		} else {
 			text = action.text
 		}
-		textUTF16 := syscall.StringToUTF16(text)
-		mii.DwTypeData = &textUTF16[0]
-		mii.Cch = uint32(len(textUTF16))
+		mii.DwTypeData = syscall.StringToUTF16Ptr(text)
 	}
 
 	mii.WID = uint32(action.id)
@@ -257,6 +267,7 @@ func (m *Menu) initMenuItemInfoFromAction(mii *win.MENUITEMINFO, action *Action)
 		mii.FState |= win.MFS_CHECKED
 	}
 	if action.Exclusive() {
+		mii.FMask |= win.MIIM_FTYPE
 		mii.FType |= win.MFT_RADIOCHECK
 	}
 
