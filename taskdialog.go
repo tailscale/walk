@@ -184,7 +184,7 @@ func (opts *TaskDialogOpts) CommonButtonClicked(btn win.TASKDIALOG_COMMON_BUTTON
 	}
 
 	for i, id := range taskDialogCommonButtonIDs {
-		if cbs&(1<<i) != 0 {
+		if btn&(1<<i) != 0 {
 			pub := opts.commonButtonEvents[id]
 			if pub == nil {
 				pub = new(ProceedEventPublisher)
@@ -668,6 +668,10 @@ func (td *taskDialog) SetFooterIcon(img Image, sys TaskDialogSystemIcon) {
 }
 
 func (td *taskDialog) EnableCommonButtons(btns win.TASKDIALOG_COMMON_BUTTON_FLAGS, enable bool) {
+	if td.opts == nil {
+		return
+	}
+
 	btns &= td.opts.CommonButtons
 	if btns == 0 {
 		return
