@@ -89,6 +89,14 @@ func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) (result
 		ni.mouseDownPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), LeftButton)
 
 	case win.WM_LBUTTONUP:
+		if len(ni.mouseDownPublisher.event.handlers) == 0 && len(ni.mouseUpPublisher.event.handlers) == 0 {
+			// If there are no mouse event handlers, then treat WM_LBUTTONUP as
+			// a "show context menu" event; this is consistent with Windows 7
+			// UX guidelines for notification icons.
+			ni.doContextMenu(hwnd, win.GET_X_LPARAM(wParam), win.GET_Y_LPARAM(wParam))
+			break
+		}
+
 		ni.mouseUpPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), LeftButton)
 
 	case win.WM_RBUTTONDOWN:
@@ -98,33 +106,8 @@ func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) (result
 		ni.mouseUpPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), RightButton)
 
 	case win.WM_CONTEXTMENU:
-		if !ni.showContextMenuPublisher.Publish() || !ni.contextMenu.Actions().HasVisible() {
-			break
-		}
+		ni.doContextMenu(hwnd, win.GET_X_LPARAM(wParam), win.GET_Y_LPARAM(wParam))
 
-		// When calling TrackPopupMenu(Ex) for notification icons, we need to do a
-		// little dance to ensure that focus arrives and leaves the context menu
-		// correctly. The original source for this information is long gone, but
-		// fortunately it was archived.
-		// See https://web.archive.org/web/20000205130053/http://support.microsoft.com/support/kb/articles/q135/7/88.asp
-		win.SetForegroundWindow(hwnd)
-
-		actionId := uint16(win.TrackPopupMenuEx(
-			ni.contextMenu.hMenu,
-			win.TPM_NOANIMATION|win.TPM_RETURNCMD,
-			win.GET_X_LPARAM(wParam),
-			win.GET_Y_LPARAM(wParam),
-			hwnd,
-			nil))
-
-		// See the above comment.
-		win.PostMessage(hwnd, win.WM_NULL, 0, 0)
-
-		if actionId != 0 {
-			if action, ok := actionsById[actionId]; ok {
-				action.raiseTriggered()
-			}
-		}
 	case win.NIN_BALLOONUSERCLICK:
 		ni.reEnableToolTip()
 		ni.messageClickedPublisher.Publish()
@@ -132,6 +115,36 @@ func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) (result
 
 	// We don't need to call DefWindowProc because we are handling an app-defined message.
 	return 0
+}
+
+func (ni *NotifyIcon) doContextMenu(hwnd win.HWND, x, y int32) {
+	if !ni.showContextMenuPublisher.Publish() || !ni.contextMenu.Actions().HasVisible() {
+		return
+	}
+
+	// When calling TrackPopupMenu(Ex) for notification icons, we need to do a
+	// little dance to ensure that focus arrives and leaves the context menu
+	// correctly. The original source for this information is long gone, but
+	// fortunately it was archived.
+	// See https://web.archive.org/web/20000205130053/http://support.microsoft.com/support/kb/articles/q135/7/88.asp
+	win.SetForegroundWindow(hwnd)
+
+	actionId := uint16(win.TrackPopupMenuEx(
+		ni.contextMenu.hMenu,
+		win.TPM_NOANIMATION|win.TPM_RETURNCMD,
+		x,
+		y,
+		hwnd,
+		nil))
+
+	// See the above comment.
+	win.PostMessage(hwnd, win.WM_NULL, 0, 0)
+
+	if actionId != 0 {
+		if action, ok := actionsById[actionId]; ok {
+			action.raiseTriggered()
+		}
+	}
 }
 
 func isTaskbarPresent() bool {
