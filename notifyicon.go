@@ -8,7 +8,6 @@
 package walk
 
 import (
-	"fmt"
 	"os"
 	"syscall"
 	"unsafe"
@@ -84,6 +83,10 @@ func (niw *notifyIconWindow) forIcon(fn func(*NotifyIcon)) {
 }
 
 func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) (result uintptr) {
+	defer func() {
+		ni.disableOpenContextMenu = false
+	}()
+
 	switch msg {
 	case win.WM_LBUTTONDOWN:
 		ni.mouseDownPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), LeftButton)
@@ -100,9 +103,17 @@ func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) (result
 		ni.mouseUpPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), LeftButton)
 
 	case win.WM_RBUTTONDOWN:
+		// As the result of a right-click we're going to be receiving a
+		// WM_CONTEXTMENU message, triggering the context menu. Suppress explicit
+		// OpenContextMenu calls to prevent a recursion mess.
+		ni.disableOpenContextMenu = true
 		ni.mouseDownPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), RightButton)
 
 	case win.WM_RBUTTONUP:
+		// As the result of a right-click we're going to be receiving a
+		// WM_CONTEXTMENU message, triggering the context menu. Suppress explicit
+		// OpenContextMenu calls to prevent a recursion mess.
+		ni.disableOpenContextMenu = true
 		ni.mouseUpPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), RightButton)
 
 	case win.WM_CONTEXTMENU:
@@ -115,6 +126,29 @@ func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) (result
 
 	// We don't need to call DefWindowProc because we are handling an app-defined message.
 	return 0
+}
+
+// OpenContextMenu displays ni's context menu at screen coordinates (x, y),
+// which are provided when handling a MouseEvent. It is a no-op if called
+// while handling right-button mouse events, as the context menu is always
+// displayed implicitly in that case. If x or y does not fall within
+// ni's bounding rectangle, the infringing coordinate will be adjusted so that
+// it does.
+func (ni *NotifyIcon) OpenContextMenu(x, y int) {
+	if ni.disableOpenContextMenu {
+		return
+	}
+
+	x32, y32 := int32(x), int32(y)
+
+	// Ensure that (x32,y32) is in rect, and adjust if not. Best effort.
+	if rect, err := ni.shellIcon.rect(); err == nil {
+		// win.RECT Left and Top are inclusive, Right and Bottom are exclusive
+		x32 = Min(Max(x32, rect.Left), rect.Right-1)
+		y32 = Min(Max(y32, rect.Top), rect.Bottom-1)
+	}
+
+	ni.doContextMenu(ni.shellIcon.hwnd(), x32, y32)
 }
 
 func (ni *NotifyIcon) doContextMenu(hwnd win.HWND, x, y int32) {
@@ -275,6 +309,31 @@ func (i *shellNotificationIcon) Dispose() error {
 	return nil
 }
 
+func (i *shellNotificationIcon) hwnd() win.HWND {
+	if i == nil || i.window == nil {
+		return 0
+	}
+	return i.window.WindowBase.hWnd
+}
+
+func (i *shellNotificationIcon) rect() (result win.RECT, err error) {
+	nid := win.NOTIFYICONIDENTIFIER{
+		CbSize: uint32(unsafe.Sizeof(win.NOTIFYICONIDENTIFIER{})),
+	}
+	if id := i.id; id != nil {
+		nid.HWnd = i.hwnd()
+		nid.UID = *id
+	} else {
+		nid.GuidItem = syscall.GUID(*(i.guid))
+	}
+
+	if hr := win.Shell_NotifyIconGetRect(&nid, &result); win.FAILED(hr) {
+		return result, errorFromHRESULT("Shell_NotifyIconGetRect", hr)
+	}
+
+	return result, nil
+}
+
 type niCmd struct {
 	shellIcon *shellNotificationIcon
 	op        uint32
@@ -294,7 +353,7 @@ func (i *shellNotificationIcon) newCmd(op uint32) *niCmd {
 		op:        op,
 		nid: win.NOTIFYICONDATA{
 			CbSize: uint32(unsafe.Sizeof(win.NOTIFYICONDATA{})),
-			HWnd:   i.window.WindowBase.hWnd,
+			HWnd:   i.hwnd(),
 			UFlags: win.NIF_SHOWTIP,
 		},
 	}
@@ -380,8 +439,8 @@ func (cmd *niCmd) setVisible(v bool) {
 }
 
 func (cmd *niCmd) execute() error {
-	if err := win.Shell_NotifyIcon(cmd.op, &cmd.nid); err != nil {
-		return fmt.Errorf("Shell_NotifyIcon: %w", err)
+	if !win.Shell_NotifyIcon(cmd.op, &cmd.nid) {
+		return newError("Shell_NotifyIcon")
 	}
 
 	if cmd.op != win.NIM_ADD {
@@ -407,11 +466,12 @@ type NotifyIcon struct {
 	contextMenu              *Menu
 	icon                     Image
 	toolTip                  string
-	visible                  bool
 	mouseDownPublisher       MouseEventPublisher
 	mouseUpPublisher         MouseEventPublisher
 	messageClickedPublisher  EventPublisher
 	showContextMenuPublisher ProceedEventPublisher
+	disableOpenContextMenu   bool
+	visible                  bool
 }
 
 // NewNotifyIcon creates and returns a new NotifyIcon.
