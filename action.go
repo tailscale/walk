@@ -431,25 +431,35 @@ func (a *Action) SetToolTip(value string) (err error) {
 
 // SetOwnerDraw converts a into an owner-drawn action whose measurement and
 // drawing is carried out by handler.
-func (a *Action) SetOwnerDraw(handler ActionOwnerDrawHandler) {
+func (a *Action) SetOwnerDraw(handler ActionOwnerDrawHandler) (err error) {
 	if a.ownerDrawInfo == nil && handler == nil {
 		// No change
 		return
 	}
 
-	if a.ownerDrawInfo != nil {
-		if a.ownerDrawInfo.handler == handler {
-			// No change
-			return
-		}
+	if a.ownerDrawInfo != nil && a.ownerDrawInfo.handler == handler {
+		// No change
+		return
+	}
 
-		a.ownerDrawInfo.Dispose()
+	old := a.ownerDrawInfo
+	defer func() {
+		if old != nil {
+			old.Dispose()
+		}
+	}()
+	if handler != nil {
+		a.ownerDrawInfo = newOwnerDrawnMenuItemInfo(a, handler)
+	} else {
 		a.ownerDrawInfo = nil
 	}
 
-	if handler != nil {
-		a.ownerDrawInfo = newOwnerDrawnMenuItemInfo(a, handler)
+	if err = a.raiseChanged(); err != nil {
+		a.ownerDrawInfo, old = old, a.ownerDrawInfo
+		a.raiseChanged()
 	}
+
+	return
 }
 
 // OwnerDraw returns true when a has a handler registered for owner drawing.
