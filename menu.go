@@ -212,13 +212,14 @@ func (m *Menu) resolveDPI() int {
 
 func (m *Menu) initMenuItemInfoFromAction(mii *win.MENUITEMINFO, action *Action) {
 	mii.CbSize = uint32(unsafe.Sizeof(*mii))
-	mii.FMask = win.MIIM_ID | win.MIIM_STATE
+	mii.FMask = win.MIIM_FTYPE | win.MIIM_ID | win.MIIM_STATE | win.MIIM_DATA
+	mii.FType = 0
+	mii.DwItemData = 0
 
 	setString := true
 
 	switch {
 	case action.ownerDrawInfo != nil:
-		mii.FMask |= win.MIIM_FTYPE
 		mii.FType |= win.MFT_OWNERDRAW
 		if m.allowOwnerDrawInvalidation {
 			// Terrible hack: owner-drawn items won't be asked to recompute their sizes
@@ -228,7 +229,6 @@ func (m *Menu) initMenuItemInfoFromAction(mii *win.MENUITEMINFO, action *Action)
 		}
 		// Setting DwItemData to the pointer to our ownerDrawInfo enables
 		// (*WindowBase).WndProc to quickly resolve the menu item being drawn.
-		mii.FMask |= win.MIIM_DATA
 		mii.DwItemData = uintptr(unsafe.Pointer(action.ownerDrawInfo))
 		setString = false
 	case action.image != nil:
@@ -238,7 +238,6 @@ func (m *Menu) initMenuItemInfoFromAction(mii *win.MENUITEMINFO, action *Action)
 			mii.HbmpItem = bmp.hBmp
 		}
 	case action.IsSeparator():
-		mii.FMask |= win.MIIM_FTYPE
 		mii.FType |= win.MFT_SEPARATOR
 		setString = false
 	default:
@@ -267,7 +266,6 @@ func (m *Menu) initMenuItemInfoFromAction(mii *win.MENUITEMINFO, action *Action)
 		mii.FState |= win.MFS_CHECKED
 	}
 	if action.Exclusive() {
-		mii.FMask |= win.MIIM_FTYPE
 		mii.FType |= win.MFT_RADIOCHECK
 	}
 
