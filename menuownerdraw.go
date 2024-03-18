@@ -105,8 +105,8 @@ func (mm *menuSpecificMetrics) measureAccelTextExtent(window Window, action *Act
 
 	// We don't need to track the extents of every single item, just the maximum
 	// size across all items.
-	mm.maxAccelTextExtent.CX = Max(mm.maxAccelTextExtent.CX, extent.CX)
-	mm.maxAccelTextExtent.CY = Max(mm.maxAccelTextExtent.CY, extent.CY)
+	mm.maxAccelTextExtent.CX = max(mm.maxAccelTextExtent.CX, extent.CX)
+	mm.maxAccelTextExtent.CY = max(mm.maxAccelTextExtent.CY, extent.CY)
 }
 
 // menuSharedMetrics contains the font, margin, and size metrics for all menus
@@ -319,7 +319,7 @@ func (ml *menuItemLayout) measure(w Window, odi *ownerDrawnMenuItemInfo) (uint32
 		// the menu (hence multiplying mm.maxAccelTextExtent.CX by 2: one copy for
 		// the spacer, one copy for the text itself).
 		contentCX += 2 * uint32(mm.maxAccelTextExtent.CX)
-		contentCY = Max(contentCY, uint32(mm.maxAccelTextExtent.CY))
+		contentCY = max(contentCY, uint32(mm.maxAccelTextExtent.CY))
 	}
 
 	ml.contentSize.CX = int32(contentCX)
@@ -342,7 +342,7 @@ func (ml *menuItemLayout) measure(w Window, odi *ownerDrawnMenuItemInfo) (uint32
 	cx := uint32(sm.gutterSize.CX + combinedContentItemSize.CX)
 
 	// On the Y-axis, we want the maximum height across checkbox, content, and chevron.
-	cy := uint32(Max(sm.gutterSize.CY, combinedContentItemSize.CY, sm.combinedChevronSize.CY))
+	cy := uint32(max(sm.gutterSize.CY, combinedContentItemSize.CY, sm.combinedChevronSize.CY))
 
 	return cx, cy
 }

@@ -7,17 +7,21 @@ package main
 import (
 	"log"
 	"math"
-)
 
-import (
 	"github.com/tailscale/walk"
+
 	. "github.com/tailscale/walk/declarative"
 )
 
 func main() {
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	mw := new(MyMainWindow)
 
-	if _, err := (MainWindow{
+	if err := (MainWindow{
 		AssignTo: &mw.MainWindow,
 		Title:    "Walk Drawing Example",
 		MinSize:  Size{320, 240},
@@ -31,9 +35,11 @@ func main() {
 				Paint:               mw.drawStuff,
 			},
 		},
-	}).Run(); err != nil {
+	}).Create(); err != nil {
 		log.Fatal(err)
 	}
+
+	app.Run()
 }
 
 type MyMainWindow struct {

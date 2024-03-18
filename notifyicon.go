@@ -19,8 +19,9 @@ import (
 const notifyIconWindowClass = `WalkNotifyIconSink`
 
 var (
-	notifyIcons            = map[*NotifyIcon]struct{}{}
 	notifyIconIDs          = map[uint16]*NotifyIcon{}
+	notifyIconMessageID    uint32
+	notifyIcons            = map[*NotifyIcon]struct{}{}
 	notifyIconSharedWindow *notifyIconWindow
 	taskbarCreatedMsgId    uint32
 )
@@ -28,6 +29,7 @@ var (
 func init() {
 	AppendToWalkInit(func() {
 		MustRegisterWindowClass(notifyIconWindowClass)
+		notifyIconMessageID = mustAllocWindowClassMessage(notifyIconWindowClass)
 		taskbarCreatedMsgId = win.RegisterWindowMessage(syscall.StringToUTF16Ptr("TaskbarCreated"))
 	})
 }
@@ -44,7 +46,7 @@ func (niw *notifyIconWindow) Dispose() {
 
 func (niw *notifyIconWindow) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
 	switch msg {
-	case notifyIconMessageId:
+	case notifyIconMessageID:
 		lp32 := uint32(lParam)
 		ni := niw.owner
 		if ni == nil {
@@ -56,7 +58,9 @@ func (niw *notifyIconWindow) WndProc(hwnd win.HWND, msg uint32, wParam, lParam u
 			}
 		}
 
-		return ni.wndProc(hwnd, win.LOWORD(lp32), wParam)
+		ni.wndProc(hwnd, win.LOWORD(lp32), wParam)
+		// We don't need to call DefWindowProc because this is an app-defined message.
+		return 0
 	case taskbarCreatedMsgId:
 		niw.forIcon(func(ni *NotifyIcon) { ni.reAddToTaskbar() })
 	case win.WM_DISPLAYCHANGE:
@@ -82,9 +86,9 @@ func (niw *notifyIconWindow) forIcon(fn func(*NotifyIcon)) {
 	}
 }
 
-func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) (result uintptr) {
+func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) {
 	defer func() {
-		ni.disableOpenContextMenu = false
+		ni.disableShowContextMenu = false
 	}()
 
 	switch msg {
@@ -105,15 +109,15 @@ func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) (result
 	case win.WM_RBUTTONDOWN:
 		// As the result of a right-click we're going to be receiving a
 		// WM_CONTEXTMENU message, triggering the context menu. Suppress explicit
-		// OpenContextMenu calls to prevent a recursion mess.
-		ni.disableOpenContextMenu = true
+		// ShowContextMenu calls to prevent a recursion mess.
+		ni.disableShowContextMenu = true
 		ni.mouseDownPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), RightButton)
 
 	case win.WM_RBUTTONUP:
 		// As the result of a right-click we're going to be receiving a
 		// WM_CONTEXTMENU message, triggering the context menu. Suppress explicit
-		// OpenContextMenu calls to prevent a recursion mess.
-		ni.disableOpenContextMenu = true
+		// ShowContextMenu calls to prevent a recursion mess.
+		ni.disableShowContextMenu = true
 		ni.mouseUpPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), RightButton)
 
 	case win.WM_CONTEXTMENU:
@@ -123,19 +127,16 @@ func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) (result
 		ni.reEnableToolTip()
 		ni.messageClickedPublisher.Publish()
 	}
-
-	// We don't need to call DefWindowProc because we are handling an app-defined message.
-	return 0
 }
 
-// OpenContextMenu displays ni's context menu at screen coordinates (x, y),
+// ShowContextMenu displays ni's context menu at screen coordinates (x, y),
 // which are provided when handling a MouseEvent. It is a no-op if called
 // while handling right-button mouse events, as the context menu is always
 // displayed implicitly in that case. If x or y does not fall within
 // ni's bounding rectangle, the infringing coordinate will be adjusted so that
 // it does.
-func (ni *NotifyIcon) OpenContextMenu(x, y int) {
-	if ni.disableOpenContextMenu {
+func (ni *NotifyIcon) ShowContextMenu(x, y int) {
+	if ni.disableShowContextMenu {
 		return
 	}
 
@@ -144,15 +145,15 @@ func (ni *NotifyIcon) OpenContextMenu(x, y int) {
 	// Ensure that (x32,y32) is in rect, and adjust if not. Best effort.
 	if rect, err := ni.shellIcon.rect(); err == nil {
 		// win.RECT Left and Top are inclusive, Right and Bottom are exclusive
-		x32 = Min(Max(x32, rect.Left), rect.Right-1)
-		y32 = Min(Max(y32, rect.Top), rect.Bottom-1)
+		x32 = min(max(x32, rect.Left), rect.Right-1)
+		y32 = min(max(y32, rect.Top), rect.Bottom-1)
 	}
 
 	ni.doContextMenu(ni.shellIcon.hwnd(), x32, y32)
 }
 
 func (ni *NotifyIcon) doContextMenu(hwnd win.HWND, x, y int32) {
-	if !ni.showContextMenuPublisher.Publish() || !ni.contextMenu.Actions().HasVisible() {
+	if !ni.showingContextMenuPublisher.Publish() || !ni.contextMenu.Actions().HasVisible() {
 		return
 	}
 
@@ -193,7 +194,8 @@ func copyStringToSlice(dst []uint16, src string) error {
 		return err
 	}
 
-	copy(dst, ss)
+	// Reserve final element for nul character.
+	copy(dst[:len(dst)-1], ss)
 	return nil
 }
 
@@ -275,7 +277,7 @@ func newShellNotificationIcon(guid *windows.GUID) (*shellNotificationIcon, error
 
 	// Add our notify icon to the status area and make sure it is hidden.
 	addCmd := shellIcon.newCmd(win.NIM_ADD)
-	addCmd.setCallbackMessage(notifyIconMessageId)
+	addCmd.setCallbackMessage(notifyIconMessageID)
 	addCmd.setVisible(false)
 	if err := addCmd.execute(); err != nil {
 		return nil, err
@@ -462,16 +464,16 @@ func (cmd *niCmd) execute() error {
 
 // NotifyIcon represents an icon in the taskbar notification area.
 type NotifyIcon struct {
-	shellIcon                *shellNotificationIcon
-	contextMenu              *Menu
-	icon                     Image
-	toolTip                  string
-	mouseDownPublisher       MouseEventPublisher
-	mouseUpPublisher         MouseEventPublisher
-	messageClickedPublisher  EventPublisher
-	showContextMenuPublisher ProceedEventPublisher
-	disableOpenContextMenu   bool
-	visible                  bool
+	shellIcon                   *shellNotificationIcon
+	contextMenu                 *Menu
+	icon                        Image
+	toolTip                     string
+	mouseDownPublisher          MouseEventPublisher
+	mouseUpPublisher            MouseEventPublisher
+	messageClickedPublisher     EventPublisher
+	showingContextMenuPublisher ProceedEventPublisher
+	disableShowContextMenu      bool
+	visible                     bool
 }
 
 // NewNotifyIcon creates and returns a new NotifyIcon.
@@ -535,7 +537,7 @@ func (ni *NotifyIcon) reAddToTaskbar() {
 	prevID := ni.shellIcon.id
 
 	cmd := ni.shellIcon.newCmd(win.NIM_ADD)
-	cmd.setCallbackMessage(notifyIconMessageId)
+	cmd.setCallbackMessage(notifyIconMessageID)
 	cmd.setVisible(ni.visible)
 	cmd.setIcon(ni.getHICON(ni.icon))
 	if err := cmd.setToolTip(ni.toolTip); err != nil {
@@ -777,9 +779,9 @@ func (ni *NotifyIcon) MessageClicked() *Event {
 	return ni.messageClickedPublisher.Event()
 }
 
-// ShowContextMenu returns the event that is published when ni's context menu
+// ShowingContextMenu returns the event that is published when ni's context menu
 // is going to be shown. Its handlers may return false to prevent the
 // context menu from being shown.
-func (ni *NotifyIcon) ShowContextMenu() *ProceedEvent {
-	return ni.showContextMenuPublisher.Event()
+func (ni *NotifyIcon) ShowingContextMenu() *ProceedEvent {
+	return ni.showingContextMenuPublisher.Event()
 }

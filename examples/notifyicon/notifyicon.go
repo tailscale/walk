@@ -6,16 +6,12 @@ package main
 
 import (
 	"log"
-)
 
-import (
 	"github.com/tailscale/walk"
 )
 
 func main() {
-	// We need either a walk.MainWindow or a walk.Dialog for their message loop.
-	// We will not make it visible in this example, though.
-	mw, err := walk.NewMainWindow()
+	app, err := walk.InitApp()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -27,7 +23,7 @@ func main() {
 	}
 
 	// Create the notify icon and make sure we clean it up on exit.
-	ni, err := walk.NewNotifyIcon(mw)
+	ni, err := walk.NewNotifyIcon()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -77,5 +73,5 @@ func main() {
 	}
 
 	// Run the message loop.
-	mw.Run()
+	app.Run()
 }

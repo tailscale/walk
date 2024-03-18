@@ -78,6 +78,10 @@ func tick(td walk.TaskDialog) {
 }
 
 func main() {
+	if _, err := walk.InitApp(); err != nil {
+		log.Fatal(err)
+	}
+
 	td := walk.NewTaskDialog()
 
 	opts := walk.TaskDialogOpts{

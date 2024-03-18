@@ -9,19 +9,23 @@ import (
 	"image/color"
 	"image/draw"
 	"log"
-)
 
-import (
 	"github.com/tailscale/walk"
+
 	. "github.com/tailscale/walk/declarative"
 )
 
 func main() {
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	var mw *walk.MainWindow
 	var windowIcon *walk.Icon
 	counter := 0
 
-	if _, err := (MainWindow{
+	if err := (MainWindow{
 		AssignTo: &mw,
 		Title:    "Walk Image Icon Example",
 		Layout:   HBox{},
@@ -44,9 +48,11 @@ func main() {
 			},
 			HSpacer{},
 		},
-	}.Run()); err != nil {
+	}.Create()); err != nil {
 		log.Fatal(err)
 	}
+
+	app.Run()
 }
 
 //  A

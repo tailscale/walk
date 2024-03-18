@@ -9,11 +9,9 @@ package walk
 
 import (
 	"bytes"
-	"fmt"
+	"errors"
 	"image"
-	"runtime"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"unsafe"
 
@@ -21,10 +19,8 @@ import (
 	"github.com/tailscale/win"
 )
 
-// App-specific message ids for internal use in Walk.
-// TODO: Document reserved range somewhere (when we have an idea how many we need).
-const (
-	notifyIconMessageId = win.WM_APP + iota
+var (
+	ErrWindowClassNotRegistered = errors.New("window class not registered with walk")
 )
 
 // Window is an interface that provides operations common to all windows.
@@ -411,11 +407,11 @@ type calcTextSizeInfo struct {
 // WindowBase implements many operations common to all Windows.
 type WindowBase struct {
 	nopActionListObserver
-	group                       *WindowGroup
 	window                      Window
 	form                        Form
 	hWnd                        win.HWND
 	origWndProcPtr              uintptr
+	wndClassInfo                *wndClassInfo
 	name                        string
 	font                        *Font
 	hFont                       win.HFONT
@@ -456,10 +452,29 @@ type WindowBase struct {
 }
 
 var (
-	registeredWindowClasses = make(map[string]bool)
+	registeredWindowClasses = map[string]*wndClassInfo{}
 	defaultWndProcPtr       uintptr
-	hwnd2WindowBase         = make(map[win.HWND]*WindowBase)
+	hwnd2WindowBase         = map[win.HWND]*WindowBase{}
 )
+
+type wndClassInfo struct {
+	nextMsg uint32
+}
+
+func (ci *wndClassInfo) allocMessage() (uint32, error) {
+	if ci.nextMsg >= win.WM_APP {
+		return win.WM_NULL, ErrNoMoreMessages
+	}
+
+	ret := ci.nextMsg
+	ci.nextMsg++
+
+	return ret, nil
+}
+
+func newWndClassInfo() *wndClassInfo {
+	return &wndClassInfo{nextMsg: win.WM_USER}
+}
 
 func init() {
 	AppendToWalkInit(func() {
@@ -467,6 +482,28 @@ func init() {
 		forEachDescendantRawCallbackPtr = syscall.NewCallback(forEachDescendantRaw)
 		dialogBaseUnitsUTF16StringPtr = syscall.StringToUTF16Ptr("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
 	})
+}
+
+func mustAllocWindowClassMessage(className string) (msg uint32) {
+	msg, err := AllocWindowClassMessage(className)
+	if err != nil {
+		panic(err)
+	}
+	return msg
+}
+
+// AllocWindowClassMessage allocates a user-defined message that is only valid
+// within the context of windows sharing the same window class. It returns
+// ErrWindowClassNotRegistered if className is not registered with walk, or
+// ErrNoMoreMessages if the class's message numbering space is exhausted.
+//
+// AllocWindowClassMessage must be called from the main goroutine.
+func AllocWindowClassMessage(className string) (uint32, error) {
+	App().AssertUIThread()
+	if wcInfo := registeredWindowClasses[className]; wcInfo != nil {
+		return wcInfo.allocMessage()
+	}
+	return win.WM_NULL, ErrWindowClassNotRegistered
 }
 
 // MustRegisterWindowClass registers the specified window class.
@@ -488,7 +525,7 @@ func MustRegisterWindowClassWithWndProcPtr(className string, wndProcPtr uintptr)
 }
 
 func MustRegisterWindowClassWithWndProcPtrAndStyle(className string, wndProcPtr uintptr, style uint32) {
-	if registeredWindowClasses[className] {
+	if registeredWindowClasses[className] != nil {
 		panic("window class already registered")
 	}
 
@@ -524,14 +561,7 @@ func MustRegisterWindowClassWithWndProcPtrAndStyle(className string, wndProcPtr 
 		panic("RegisterClassEx")
 	}
 
-	registeredWindowClasses[className] = true
-}
-
-var initedWalk uint32
-var walkInit []func()
-
-func AppendToWalkInit(fn func()) {
-	walkInit = append(walkInit, fn)
+	registeredWindowClasses[className] = newWndClassInfo()
 }
 
 type windowCfg struct {
@@ -556,24 +586,16 @@ func InitWindow(window, parent Window, className string, style, exStyle uint32) 
 	})
 }
 
+type createContext struct {
+	cfg *windowCfg
+	err error
+}
+
 func initWindowWithCfg(cfg *windowCfg) error {
-	// We can't use sync.Once, because tooltip.go's init also calls InitWindow, so we deadlock.
-	if atomic.CompareAndSwapUint32(&initedWalk, 0, 1) {
-		runtime.LockOSThread()
-
-		var initCtrls win.INITCOMMONCONTROLSEX
-		initCtrls.DwSize = uint32(unsafe.Sizeof(initCtrls))
-		initCtrls.DwICC = win.ICC_LINK_CLASS | win.ICC_LISTVIEW_CLASSES | win.ICC_PROGRESS_CLASS | win.ICC_TAB_CLASSES | win.ICC_TREEVIEW_CLASSES
-		win.InitCommonControlsEx(&initCtrls)
-
-		defaultWndProcPtr = syscall.NewCallback(defaultWndProc)
-		for _, fn := range walkInit {
-			fn()
-		}
-	}
-
+	var isWalkClass bool
 	wb := cfg.Window.AsWindowBase()
 	wb.window = cfg.Window
+	wb.wndClassInfo, isWalkClass = registeredWindowClasses[cfg.ClassName]
 	wb.enabled = true
 	wb.visible = cfg.Style&win.WS_VISIBLE != 0
 	wb.calcTextSizeInfo2TextSize = make(map[calcTextSizeInfo]Size)
@@ -595,72 +617,87 @@ func initWindowWithCfg(cfg *windowCfg) error {
 		}
 	}
 
+	if hwnd := cfg.Window.Handle(); hwnd != 0 {
+		// We're creating a Walk window off of an existing HWND.
+		if err := wb.attachHWND(hwnd, cfg); err != nil {
+			wb.Dispose()
+			return err
+		}
+		if err := wb.finishInit(); err != nil {
+			wb.Dispose()
+			return err
+		}
+		return nil
+	}
+
 	var windowName *uint16
 	if len(wb.name) != 0 {
 		windowName = syscall.StringToUTF16Ptr(wb.name)
 	}
 
-	if hwnd := cfg.Window.Handle(); hwnd == 0 {
-		var x, y, w, h int32
-		if cfg.Bounds.IsZero() {
-			x = win.CW_USEDEFAULT
-			y = win.CW_USEDEFAULT
-			w = win.CW_USEDEFAULT
-			h = win.CW_USEDEFAULT
-		} else {
-			x = int32(cfg.Bounds.X)
-			y = int32(cfg.Bounds.Y)
-			w = int32(cfg.Bounds.Width)
-			h = int32(cfg.Bounds.Height)
-		}
-
-		wb.hWnd = win.CreateWindowEx(
-			cfg.ExStyle,
-			syscall.StringToUTF16Ptr(cfg.ClassName),
-			windowName,
-			cfg.Style|win.WS_CLIPSIBLINGS,
-			x,
-			y,
-			w,
-			h,
-			hwndParent,
-			hMenu,
-			0,
-			nil)
-		if wb.hWnd == 0 {
-			return lastError("CreateWindowEx")
-		}
+	var x, y, w, h int32
+	if cfg.Bounds.IsZero() {
+		x = win.CW_USEDEFAULT
+		y = win.CW_USEDEFAULT
+		w = win.CW_USEDEFAULT
+		h = win.CW_USEDEFAULT
 	} else {
-		wb.hWnd = hwnd
+		x = int32(cfg.Bounds.X)
+		y = int32(cfg.Bounds.Y)
+		w = int32(cfg.Bounds.Width)
+		h = int32(cfg.Bounds.Height)
 	}
 
-	// Handles returned by CreateWindowEx can only be used by the calling
-	// thread. As a result, InitWindow *must* be called from a goroutine that
-	// has been locked to an OS thread via runtime.LockOSThread().
-	//
-	// This means we can ask the OS for the ID of the current thread and we
-	// don't have to worry about the scheduler moving us onto another thread
-	// later.
-	tid := win.GetCurrentThreadId()
+	var createCtx *createContext
+	if isWalkClass {
+		// Context data that will be used by the WM_NCCREATE and WM_CREATE handlers.
+		createCtx = &createContext{cfg: cfg}
+	}
 
-	// Use the thread ID to look up our window group, which stores data that
-	// is common to all windows on a common thread. A group will be created
-	// if one doesn't already exist for the thread ID.
-	//
-	// CreateGroup automatically increments the reference counter for the
-	// group. The counter will be decremented later in WindowBase.Dispose.
-	wb.group = wgm.CreateGroup(tid)
-
-	succeeded := false
-	defer func() {
-		if !succeeded {
-			wb.Dispose()
+	hwnd := win.CreateWindowEx(
+		cfg.ExStyle,
+		syscall.StringToUTF16Ptr(cfg.ClassName),
+		windowName,
+		cfg.Style|win.WS_CLIPSIBLINGS,
+		x,
+		y,
+		w,
+		h,
+		hwndParent,
+		hMenu,
+		0,
+		unsafe.Pointer(createCtx),
+	)
+	if hwnd == 0 {
+		if createCtx == nil || createCtx.err == nil {
+			return lastError("CreateWindowEx")
 		}
-	}()
+		return createCtx.err
+	}
 
-	hwnd2WindowBase[wb.hWnd] = wb
+	// When isWalkClass == true, wb.hWnd and hwnd2WindowBase will have already
+	// been populated by the WM_NCCREATE handler in defaultWndProc.
+	// OTOH, we won't see WM_(NC)CREATE for non-Walk classes, so we need to attach
+	// their HWNDs here.
+	if !isWalkClass {
+		if err := wb.attachHWND(hwnd, cfg); err != nil {
+			wb.Dispose()
+			return err
+		}
+		if err := wb.finishInit(); err != nil {
+			wb.Dispose()
+			return err
+		}
+	}
 
-	if !registeredWindowClasses[cfg.ClassName] {
+	return nil
+}
+
+func (wb *WindowBase) attachHWND(hwnd win.HWND, cfg *windowCfg) error {
+	wb.hWnd = hwnd
+	hwnd2WindowBase[hwnd] = wb
+
+	if registeredWindowClasses[cfg.ClassName] == nil {
 		// We subclass all windows of system classes.
 		wb.origWndProcPtr = win.SetWindowLongPtr(wb.hWnd, win.GWLP_WNDPROC, defaultWndProcPtr)
 		if wb.origWndProcPtr == 0 {
@@ -668,9 +705,13 @@ func initWindowWithCfg(cfg *windowCfg) error {
 		}
 	}
 
+	return nil
+}
+
+func (wb *WindowBase) finishInit() error {
 	SetWindowFont(wb.hWnd, defaultFont)
 
-	if form, ok := cfg.Window.(Form); ok {
+	if form, ok := wb.window.(Form); ok {
 		if fb := form.AsFormBase(); fb != nil {
 			if err := fb.init(form); err != nil {
 				return err
@@ -678,7 +719,7 @@ func initWindowWithCfg(cfg *windowCfg) error {
 		}
 	}
 
-	if widget, ok := cfg.Window.(Widget); ok {
+	if widget, ok := wb.window.(Widget); ok {
 		if wb := widget.AsWidgetBase(); wb != nil {
 			if err := wb.init(widget); err != nil {
 				return err
@@ -715,8 +756,6 @@ func initWindowWithCfg(cfg *windowCfg) error {
 	wb.MustRegisterProperty("Enabled", wb.enabledProperty)
 	wb.MustRegisterProperty("Visible", wb.visibleProperty)
 	wb.MustRegisterProperty("Focused", wb.focusedProperty)
-
-	succeeded = true
 
 	return nil
 }
@@ -893,48 +932,67 @@ func (wb *WindowBase) AddDisposable(d Disposable) {
 // Also, if a Container is disposed of, all its descendants will be released
 // as well.
 func (wb *WindowBase) Dispose() {
+	if wb.hWnd != 0 {
+		// The actual work is done by disposeInternal, which is called by the
+		// WM_DESTROY handler.
+		win.DestroyWindow(wb.hWnd)
+	}
+}
+
+func (wb *WindowBase) disposeInternal(hwnd win.HWND) {
+	defer func() {
+		delete(hwnd2WindowBase, hwnd)
+		wb.hWnd = 0
+	}()
+
+	wb.disposingPublisher.Publish()
+
+	// Non-walk controls handle their own a11y.
+	if wb.origWndProcPtr == 0 {
+		accClearHwndProps(hwnd)
+	}
+	wb.acc = nil
+
 	for _, d := range wb.disposables {
 		d.Dispose()
 	}
+	wb.disposables = nil
 
 	if wb.background != nil {
 		wb.background.detachWindow(wb)
-	}
-
-	hWnd := wb.hWnd
-	if hWnd != 0 {
-		wb.disposingPublisher.Publish()
-
-		wb.hWnd = 0
-		if _, ok := hwnd2WindowBase[hWnd]; ok {
-			win.DestroyWindow(hWnd)
-		}
+		wb.background = nil
 	}
 
 	if cm := wb.contextMenu; cm != nil {
 		cm.actions.Clear()
 		cm.Dispose()
+		wb.contextMenu = nil
 	}
 
 	if wb.shortcutActions != nil {
 		wb.shortcutActions.Clear()
+		wb.shortcutActions = nil
 	}
+
+	wb.calcTextSizeInfo2TextSize = nil
 
 	for _, p := range wb.name2Property {
 		p.SetSource(nil)
 	}
+	wb.name2Property = nil
+
+	wb.enabledProperty = nil
+	wb.visibleProperty = nil
+	wb.focusedProperty = nil
 
 	for _, t := range wb.themes {
 		t.close()
 	}
+	wb.themes = nil
 
 	if wb.menuSharedMetricsInitialDPI != nil {
 		dpicache.Delete(wb.menuSharedMetricsInitialDPI)
-	}
-
-	if hWnd != 0 {
-		wb.group.accClearHwndProps(wb.hWnd)
-		wb.group.Done()
+		wb.menuSharedMetricsInitialDPI = nil
 	}
 }
 
@@ -1952,7 +2010,7 @@ func (wb *WindowBase) RequestLayout() {
 		return
 	}
 
-	if fb := form.AsFormBase(); fb.group.ActiveForm() != form || fb.inProgressEventCount == 0 {
+	if fb := form.AsFormBase(); activeForm != fb {
 		fb.startLayout()
 	} else {
 		fb.layoutScheduled = true
@@ -2114,8 +2172,10 @@ func (wb *WindowBase) BoundsChanged() *Event {
 
 // Synchronize enqueues func f to be called some time later by the main
 // goroutine from inside a message loop.
+//
+// Deprecated: Use App().Synchronize() instead.
 func (wb *WindowBase) Synchronize(f func()) {
-	wb.group.Synchronize(f)
+	App().Synchronize(f)
 }
 
 // ThemeForClass obtains the theme associated with this Window whose class is
@@ -2134,15 +2194,6 @@ func (wb *WindowBase) ThemeForClass(themeClass string) (*Theme, error) {
 
 	wb.themes[themeClass] = t
 	return t, nil
-}
-
-// synchronizeLayout causes the given layout computations to be applied
-// later by the message loop running on the group's thread.
-//
-// Any previously queued layout computations that have not yet been applied
-// will be replaced.
-func (wb *WindowBase) synchronizeLayout(result *formLayoutResult) {
-	wb.group.synchronizeLayout(result)
 }
 
 func (wb *WindowBase) ReadState() (string, error) {
@@ -2180,33 +2231,48 @@ func windowFromHandle(hwnd win.HWND) Window {
 	return nil
 }
 
-func defaultWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) (result uintptr) {
-	defer func() {
-		// FIXME: Rework the panicking publisher so that we don't have to
-		// access a private member here.
-		if len(App().panickingPublisher.event.handlers) > 0 {
-			var err error
-			if x := recover(); x != nil {
-				if e, ok := x.(error); ok {
-					err = wrapErrorNoPanic(e)
-				} else {
-					err = newErrorNoPanic(fmt.Sprint(x))
-				}
-			}
-			if err != nil {
-				App().panickingPublisher.Publish(err)
+func defaultWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
+	defer appSingleton.maybePublishPanic()
+
+	var wi Window
+	if msg == win.WM_NCCREATE {
+		// WM_NCCREATE is sent synchronously during a CreateWindow(Ex) call and is
+		// the earliest possible opportunity to associate a newly-created HWND with
+		// a WindowBase.
+		cs := (*win.CREATESTRUCT)(unsafe.Pointer(lParam))
+		if createCtx := (*createContext)(unsafe.Pointer(cs.CreateParams)); createCtx != nil && createCtx.cfg != nil && createCtx.cfg.Window != nil {
+			wi = createCtx.cfg.Window
+			wb := wi.AsWindowBase()
+			if err := wb.attachHWND(hwnd, createCtx.cfg); err != nil {
+				// Propagate err to the caller.
+				createCtx.err = err
+				// Fail the CreateWindowEx call.
+				return 0
 			}
 		}
-	}()
+	} else {
+		wi = windowFromHandle(hwnd)
+	}
 
-	wi := windowFromHandle(hwnd)
 	if wi == nil {
 		return win.DefWindowProc(hwnd, msg, wParam, lParam)
 	}
 
-	result = wi.WndProc(hwnd, msg, wParam, lParam)
+	if msg == win.WM_CREATE {
+		// Also called synchronously during a CreateWindow(Ex) call.
+		wb := wi.AsWindowBase()
+		if err := wb.finishInit(); err != nil {
+			cs := (*win.CREATESTRUCT)(unsafe.Pointer(lParam))
+			if createCtx := (*createContext)(unsafe.Pointer(cs.CreateParams)); createCtx != nil {
+				// Propagate err to the caller.
+				createCtx.err = err
+			}
+			// Fail the CreateWindowEx call. Yes, the failure code for WM_CREATE differs from the one for WM_NCCREATE.
+			return ^uintptr(0)
+		}
+	}
 
-	return
+	return wi.WndProc(hwnd, msg, wParam, lParam)
 }
 
 type menuer interface {
@@ -2462,7 +2528,7 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 				}
 			}
 
-			if wb.Form() == wb.group.ActiveForm() {
+			if wb.Form() == activeForm {
 				wnd.AsWidgetBase().invalidateBorderInParent()
 			}
 		}
@@ -2587,23 +2653,27 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 		for _, v := range wb.themes {
 			v.close()
 		}
-		wb.themes = make(map[string]*Theme)
+		clear(wb.themes)
 
 		wb.window.(ApplySysColorser).ApplySysColors()
 
 	case win.WM_DESTROY:
-		if wb.origWndProcPtr != 0 {
+		wb.disposeInternal(hwnd)
+		if prevWndProc := wb.origWndProcPtr; prevWndProc != 0 {
 			// As we subclass all windows of system classes, we prevented the
 			// clean-up code in the WM_NCDESTROY handlers of some windows from
 			// being called. To fix this, we restore the original window
 			// procedure here.
-			win.SetWindowLongPtr(wb.hWnd, win.GWLP_WNDPROC, wb.origWndProcPtr)
+			win.SetWindowLongPtr(hwnd, win.GWLP_WNDPROC, prevWndProc)
+			wb.origWndProcPtr = 0
+			// Now that we've cleared wb.origWndProcPtr, we need to explicitly
+			// propagate this message on to prevWndProc.
+			return win.CallWindowProc(prevWndProc, hwnd, msg, wParam, lParam)
 		}
 
-		delete(hwnd2WindowBase, hwnd)
-
-		wb.window.Dispose()
-		wb.hWnd = 0
+	case App().cloakChangeMsg:
+		// No-op at the moment until we make window visibility aware of cloaking.
+		return 0
 	}
 
 	if window != nil {

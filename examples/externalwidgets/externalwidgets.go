@@ -22,6 +22,11 @@ func init() {
 }
 
 func main() {
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	var mw *walk.MainWindow
 
 	if err := (MainWindow{
@@ -47,7 +52,7 @@ func main() {
 	}
 	mpb.SetText("MyPushButton")
 
-	mw.Run()
+	app.Run()
 }
 
 type MyWidget struct {

@@ -6,17 +6,21 @@ package main
 
 import (
 	"log"
-)
 
-import (
 	"github.com/tailscale/walk"
+
 	. "github.com/tailscale/walk/declarative"
 )
 
 func main() {
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	var te *walk.TextEdit
 
-	if _, err := (MainWindow{
+	if err := (MainWindow{
 		Title:   "Walk Clipboard Example",
 		MinSize: Size{300, 200},
 		Layout:  VBox{},
@@ -43,7 +47,9 @@ func main() {
 				AssignTo: &te,
 			},
 		},
-	}).Run(); err != nil {
+	}).Create(); err != nil {
 		log.Fatal(err)
 	}
+
+	app.Run()
 }

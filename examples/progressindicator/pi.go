@@ -7,15 +7,19 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"time"
-)
 
-import (
 	"github.com/tailscale/walk"
 )
 
 func main() {
-	if _, err := RunMyDialog(nil); err != nil {
+	_, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := RunMyDialog(nil); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -31,10 +35,10 @@ func (dlg *MyDialog) setState(state walk.PIState) {
 	}
 }
 
-func RunMyDialog(owner walk.Form) (int, error) {
+func RunMyDialog(owner walk.Form) error {
 	dlg := new(MyDialog)
 	if err := dlg.init(owner); err != nil {
-		return 0, err
+		return err
 	}
 
 	dlg.ui.indeterminateBtn.Clicked().Attach(func() {
@@ -75,5 +79,6 @@ func RunMyDialog(owner walk.Form) (int, error) {
 		}()
 	})
 
-	return dlg.Run(), nil
+	os.Exit(dlg.Run())
+	return nil
 }

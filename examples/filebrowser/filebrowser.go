@@ -9,10 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-)
 
-import (
 	"github.com/tailscale/walk"
+
 	. "github.com/tailscale/walk/declarative"
 )
 
@@ -218,6 +217,11 @@ func shouldExclude(name string) bool {
 }
 
 func main() {
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	var mainWindow *walk.MainWindow
 	var splitter *walk.Splitter
 	var treeView *walk.TreeView
@@ -300,5 +304,5 @@ func main() {
 	splitter.SetFixed(treeView, true)
 	splitter.SetFixed(tableView, true)
 
-	mainWindow.Run()
+	app.Run()
 }

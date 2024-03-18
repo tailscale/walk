@@ -28,10 +28,12 @@ type MainWindowCfg struct {
 
 type MainWindow struct {
 	FormBase
-	windowPlacement *win.WINDOWPLACEMENT
-	menu            *Menu
-	toolBar         *ToolBar
-	statusBar       *StatusBar
+	windowPlacement     *win.WINDOWPLACEMENT
+	menu                *Menu
+	toolBar             *ToolBar
+	statusBar           *StatusBar
+	exitCode            int
+	exitOnCloseDisabled bool
 }
 
 func NewMainWindow() (*MainWindow, error) {
@@ -94,6 +96,20 @@ func NewMainWindowWithCfg(cfg *MainWindowCfg) (*MainWindow, error) {
 	succeeded = true
 
 	return mw, nil
+}
+
+// SetExitCode sets the integral exit code that will be returned by the
+// main message loop when mw is destroyed, unless mw.SetExitOnClose(false) has
+// been called.
+func (mw *MainWindow) SetExitCode(exitCode int) {
+	mw.exitCode = exitCode
+}
+
+// SetExitOnClose controls whether closing mw causes Application.Run
+// to break out of its message pump and return the value set by
+// mw.SetExitCode.
+func (mw *MainWindow) SetExitOnClose(exitOnClose bool) {
+	mw.exitOnCloseDisabled = !exitOnClose
 }
 
 func (mw *MainWindow) Menu() *Menu {
@@ -241,6 +257,16 @@ func (mw *MainWindow) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 		bounds := Rectangle{0, cb.Y + cb.Height, cb.Width, mw.statusBar.HeightPixels()}
 		if mw.statusBar.BoundsPixels() != bounds {
 			mw.statusBar.SetBoundsPixels(bounds)
+		}
+	case win.WM_CLOSE:
+		// Ensure that all Closing event handlers have executed *before* we set
+		// the exit code.
+		if mw.FormBase.WndProc(hwnd, msg, wParam, lParam) == 0 {
+			if !mw.exitOnCloseDisabled {
+				mw.Dispose()
+				App().Exit(mw.exitCode)
+			}
+			return 0
 		}
 	}
 

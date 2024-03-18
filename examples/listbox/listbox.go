@@ -9,17 +9,21 @@ import (
 	"log"
 	"os"
 	"strings"
-)
 
-import (
 	"github.com/tailscale/walk"
+
 	. "github.com/tailscale/walk/declarative"
 )
 
 func main() {
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	mw := &MyMainWindow{model: NewEnvModel()}
 
-	if _, err := (MainWindow{
+	if err := (MainWindow{
 		AssignTo: &mw.MainWindow,
 		Title:    "Walk ListBox Example",
 		MinSize:  Size{240, 320},
@@ -29,8 +33,8 @@ func main() {
 			HSplitter{
 				Children: []Widget{
 					ListBox{
-						AssignTo: &mw.lb,
-						Model:    mw.model,
+						AssignTo:              &mw.lb,
+						Model:                 mw.model,
 						OnCurrentIndexChanged: mw.lb_CurrentIndexChanged,
 						OnItemActivated:       mw.lb_ItemActivated,
 					},
@@ -41,9 +45,11 @@ func main() {
 				},
 			},
 		},
-	}.Run()); err != nil {
+	}.Create()); err != nil {
 		log.Fatal(err)
 	}
+
+	app.Run()
 }
 
 type MyMainWindow struct {

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -232,9 +233,7 @@ func fitRectToScreen(hWnd win.HWND, r Rectangle) Rectangle {
 
 func (dlg *Dialog) Run() int {
 	dlg.Show()
-
-	dlg.FormBase.Run()
-
+	App().RunModal(dlg)
 	return dlg.result
 }
 

@@ -2,11 +2,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
 
-import "github.com/tailscale/win"
+import (
+	"unsafe"
+
+	"github.com/tailscale/win"
+)
 
 // AccState enum defines the state of the window/control
 type AccState int32
@@ -181,7 +186,7 @@ func (a *Accessibility) SetValueMap(valueMap string) error {
 
 // accSetPropertyInt sets integer window property for Dynamic Annotation.
 func (a *Accessibility) accSetPropertyInt(hwnd win.HWND, idProp *win.MSAAPROPID, event uint32, value int32) error {
-	accPropServices := a.wb.group.accessibilityServices()
+	accPropServices := accessibilityServices()
 	if accPropServices == nil {
 		return newError("Dynamic Annotation not available")
 	}
@@ -199,7 +204,7 @@ func (a *Accessibility) accSetPropertyInt(hwnd win.HWND, idProp *win.MSAAPROPID,
 
 // accSetPropertyStr sets string window property for Dynamic Annotation.
 func (a *Accessibility) accSetPropertyStr(hwnd win.HWND, idProp *win.MSAAPROPID, event uint32, value string) error {
-	accPropServices := a.wb.group.accessibilityServices()
+	accPropServices := accessibilityServices()
 	if accPropServices == nil {
 		return newError("Dynamic Annotation not available")
 	}
@@ -211,4 +216,45 @@ func (a *Accessibility) accSetPropertyStr(hwnd win.HWND, idProp *win.MSAAPROPID,
 		win.NotifyWinEvent(event, hwnd, win.OBJID_CLIENT, win.CHILDID_SELF)
 	}
 	return nil
+}
+
+var accPropServices *win.IAccPropServices
+
+func accessibilityServices() *win.IAccPropServices {
+	if accPropServices != nil {
+		return accPropServices
+	}
+
+	hr := win.CoCreateInstance(
+		&win.CLSID_AccPropServices, nil,
+		win.CLSCTX_INPROC_SERVER, &win.IID_IAccPropServices,
+		(*unsafe.Pointer)(unsafe.Pointer(&accPropServices)),
+	)
+	if win.FAILED(hr) {
+		return nil
+	}
+
+	return accPropServices
+}
+
+// accPropIds is a static list of accessibility properties user (may) set for a window
+// and we should clear when the window is disposed.
+var accPropIds = []win.MSAAPROPID{
+	win.PROPID_ACC_DEFAULTACTION,
+	win.PROPID_ACC_DESCRIPTION,
+	win.PROPID_ACC_HELP,
+	win.PROPID_ACC_KEYBOARDSHORTCUT,
+	win.PROPID_ACC_NAME,
+	win.PROPID_ACC_ROLE,
+	win.PROPID_ACC_ROLEMAP,
+	win.PROPID_ACC_STATE,
+	win.PROPID_ACC_STATEMAP,
+	win.PROPID_ACC_VALUEMAP,
+}
+
+func accClearHwndProps(hwnd win.HWND) {
+	if accPropServices == nil {
+		return
+	}
+	accPropServices.ClearHwndProps(hwnd, win.OBJID_CLIENT, win.CHILDID_SELF, accPropIds)
 }

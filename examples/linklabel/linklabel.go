@@ -6,15 +6,19 @@ package main
 
 import (
 	"log"
-)
 
-import (
 	"github.com/tailscale/walk"
+
 	. "github.com/tailscale/walk/declarative"
 )
 
 func main() {
-	if _, err := (MainWindow{
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := (MainWindow{
 		Title:   "Walk LinkLabel Example",
 		MinSize: Size{300, 200},
 		Layout:  VBox{},
@@ -27,7 +31,9 @@ func main() {
 				},
 			},
 		},
-	}).Run(); err != nil {
+	}).Create(); err != nil {
 		log.Fatal(err)
 	}
+
+	app.Run()
 }

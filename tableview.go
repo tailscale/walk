@@ -250,8 +250,8 @@ func NewTableViewWithCfg(parent Container, cfg *TableViewCfg) (*TableView, error
 	win.SendMessage(tv.hwndFrozenLV, win.WM_CHANGEUISTATE, uintptr(win.MAKELONG(win.UIS_SET, win.UISF_HIDEFOCUS)), 0)
 	win.SendMessage(tv.hwndNormalLV, win.WM_CHANGEUISTATE, uintptr(win.MAKELONG(win.UIS_SET, win.UISF_HIDEFOCUS)), 0)
 
-	tv.group.toolTip.addTool(tv.hwndFrozenHdr, false)
-	tv.group.toolTip.addTool(tv.hwndNormalHdr, false)
+	App().toolTip().addTool(tv.hwndFrozenHdr, false)
+	App().toolTip().addTool(tv.hwndNormalHdr, false)
 
 	tv.applyFont(parent.Font())
 
@@ -350,13 +350,13 @@ func (tv *TableView) Dispose() {
 	}
 
 	if tv.hwndFrozenLV != 0 {
-		tv.group.toolTip.removeTool(tv.hwndFrozenHdr)
+		App().toolTip().removeTool(tv.hwndFrozenHdr)
 		win.DestroyWindow(tv.hwndFrozenLV)
 		tv.hwndFrozenLV = 0
 	}
 
 	if tv.hwndNormalLV != 0 {
-		tv.group.toolTip.removeTool(tv.hwndNormalHdr)
+		App().toolTip().removeTool(tv.hwndNormalHdr)
 		win.DestroyWindow(tv.hwndNormalLV)
 		tv.hwndNormalLV = 0
 	}
@@ -2559,7 +2559,7 @@ func tableViewHdrWndProc(hwnd win.HWND, msg uint32, wp, lp uintptr) uintptr {
 		hti := win.HDHITTESTINFO{Pt: win.POINT{int32(win.GET_X_LPARAM(lp)), int32(win.GET_Y_LPARAM(lp))}}
 		win.SendMessage(hwnd, win.HDM_HITTEST, 0, uintptr(unsafe.Pointer(&hti)))
 		if hti.IItem == -1 {
-			tv.group.toolTip.setText(hwnd, "")
+			App().toolTip().setText(hwnd, "")
 			break
 		}
 
@@ -2568,21 +2568,21 @@ func tableViewHdrWndProc(hwnd win.HWND, msg uint32, wp, lp uintptr) uintptr {
 
 		var rc win.RECT
 		if 0 == win.SendMessage(hwnd, win.HDM_GETITEMRECT, uintptr(hti.IItem), uintptr(unsafe.Pointer(&rc))) {
-			tv.group.toolTip.setText(hwnd, "")
+			App().toolTip().setText(hwnd, "")
 			break
 		}
 
 		size := calculateTextSize(text, tv.Font(), tv.DPI(), 0, hwnd)
 		if size.Width <= rectangleFromRECT(rc).Width-int(win.SendMessage(hwnd, win.HDM_GETBITMAPMARGIN, 0, 0)) {
-			tv.group.toolTip.setText(hwnd, "")
+			App().toolTip().setText(hwnd, "")
 			break
 		}
 
-		if tv.group.toolTip.text(hwnd) == text {
+		if App().toolTip().text(hwnd) == text {
 			break
 		}
 
-		tv.group.toolTip.setText(hwnd, text)
+		App().toolTip().setText(hwnd, text)
 
 		m := win.MSG{
 			HWnd:    hwnd,
@@ -2592,7 +2592,7 @@ func tableViewHdrWndProc(hwnd win.HWND, msg uint32, wp, lp uintptr) uintptr {
 			Pt:      hti.Pt,
 		}
 
-		tv.group.toolTip.SendMessage(win.TTM_RELAYEVENT, 0, uintptr(unsafe.Pointer(&m)))
+		App().toolTip().SendMessage(win.TTM_RELAYEVENT, 0, uintptr(unsafe.Pointer(&m)))
 	}
 
 	return win.CallWindowProc(origWndProcPtr, hwnd, msg, wp, lp)
