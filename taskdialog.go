@@ -295,6 +295,7 @@ type taskDialog struct {
 // NewTaskDialog instantiates a new TaskDialog. It must only be called from the
 // UI goroutine.
 func NewTaskDialog() TaskDialog {
+	App().AssertUIThread()
 	if taskDialogCallback == 0 {
 		taskDialogCallback = windows.NewCallback(taskDialogCallbackWrapper)
 	}
@@ -303,6 +304,7 @@ func NewTaskDialog() TaskDialog {
 }
 
 func (td *taskDialog) Show(opts TaskDialogOpts) (result TaskDialogResult, err error) {
+	App().AssertUIThread()
 	td.opts = &opts
 	defer func() {
 		td.opts = nil

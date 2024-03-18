@@ -6,9 +6,10 @@ package main
 
 import (
 	"fmt"
-)
+	"log"
 
-import (
+	"github.com/tailscale/walk"
+
 	. "github.com/tailscale/walk/declarative"
 )
 
@@ -18,6 +19,11 @@ type Foo struct {
 }
 
 func main() {
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	foo := &Foo{"b", 0}
 
 	MainWindow{
@@ -98,5 +104,7 @@ func main() {
 				Enabled: Bind("threeRB.Checked"),
 			},
 		},
-	}.Run()
+	}.Create()
+
+	app.Run()
 }

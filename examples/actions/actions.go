@@ -6,10 +6,9 @@ package main
 
 import (
 	"log"
-)
 
-import (
 	"github.com/tailscale/walk"
+
 	. "github.com/tailscale/walk/declarative"
 )
 
@@ -20,6 +19,11 @@ type MyMainWindow struct {
 }
 
 func main() {
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	MustRegisterCondition("isSpecialMode", isSpecialMode)
 
 	mw := new(MyMainWindow)
@@ -181,7 +185,7 @@ func main() {
 
 	addRecentFileActions("Foo", "Bar", "Baz")
 
-	mw.Run()
+	app.Run()
 }
 
 func (mw *MyMainWindow) openAction_Triggered() {

@@ -9,15 +9,17 @@ import (
 	"math/rand"
 	"strings"
 	"time"
-)
 
-import (
 	"github.com/tailscale/walk"
+
 	. "github.com/tailscale/walk/declarative"
 )
 
 func main() {
-	app := walk.App()
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// These specify the app data sub directory for the settings file.
 	app.SetOrganizationName("The Walk Authors")
@@ -46,7 +48,7 @@ func main() {
 }
 
 func RunMainWindow() error {
-	if _, err := (MainWindow{
+	if err := (MainWindow{
 		Name:    "mainWindow", // Name is needed for settings persistence
 		Title:   "Walk Settings Example",
 		MinSize: Size{800, 600},
@@ -65,9 +67,11 @@ func RunMainWindow() error {
 				},
 				Model: NewFooModel(),
 			}},
-	}.Run()); err != nil {
+	}.Create()); err != nil {
 		return err
 	}
+
+	walk.App().Run()
 
 	return nil
 }

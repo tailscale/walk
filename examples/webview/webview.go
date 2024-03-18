@@ -5,6 +5,7 @@
 package main
 
 import (
+	"log"
 	"strings"
 
 	"github.com/tailscale/walk"
@@ -12,6 +13,11 @@ import (
 )
 
 func main() {
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	var le *walk.LineEdit
 	var wv *walk.WebView
 
@@ -45,5 +51,7 @@ func main() {
 				return "stop", nil
 			},
 		},
-	}.Run()
+	}.Create()
+
+	app.Run()
 }

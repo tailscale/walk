@@ -6,14 +6,19 @@ package main
 
 import (
 	"bytes"
-)
+	"log"
 
-import (
 	"github.com/tailscale/walk"
+
 	. "github.com/tailscale/walk/declarative"
 )
 
 func main() {
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	walk.Resources.SetRootDirPath("../img")
 
 	mw := new(AppMainWindow)
@@ -51,7 +56,7 @@ func main() {
 
 	mw.updateTitle(mw.CurrentPageTitle())
 
-	mw.Run()
+	app.Run()
 }
 
 type AppMainWindow struct {

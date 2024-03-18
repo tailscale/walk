@@ -15,6 +15,11 @@ import (
 )
 
 func main() {
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	icon1, err := walk.NewIconFromFile("../img/check.ico")
 	if err != nil {
 		log.Fatal(err)
@@ -61,5 +66,7 @@ func main() {
 				ToolTipText: "An icon with a tooltip",
 			},
 		},
-	}.Run()
+	}.Create()
+
+	app.Run()
 }

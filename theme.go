@@ -188,6 +188,11 @@ func (t *Theme) DrawText(canvas *Canvas, font *Font, partID, stateID int32, text
 	return t.drawText(canvas, font, partID, stateID, text, flags, &rect, options)
 }
 
+var themeDrawTextDefaultOptions = win.DTTOPTS{
+	DwSize:  uint32(unsafe.Sizeof(win.DTTOPTS{})),
+	DwFlags: win.DTT_COMPOSITED,
+}
+
 func (t *Theme) drawText(canvas *Canvas, font *Font, partID, stateID int32, text string, flags uint32, rect *win.RECT, options *win.DTTOPTS) error {
 	textUTF16, err := windows.UTF16FromString(text)
 	if err != nil {
@@ -195,10 +200,7 @@ func (t *Theme) drawText(canvas *Canvas, font *Font, partID, stateID int32, text
 	}
 
 	if options == nil {
-		options = &win.DTTOPTS{
-			DwSize:  uint32(unsafe.Sizeof(*options)),
-			DwFlags: win.DTT_COMPOSITED,
-		}
+		options = &themeDrawTextDefaultOptions
 	}
 
 	return canvas.withFont(font, func() error {

@@ -16,6 +16,11 @@ import (
 )
 
 func main() {
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	var mw *walk.MainWindow
 	var lb *walk.ListBox
 	var items []logEntry
@@ -84,7 +89,7 @@ func main() {
 	}()
 
 	mw.Show()
-	mw.Run()
+	app.Run()
 
 	cancel <- true
 }

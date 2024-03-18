@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -50,22 +51,6 @@ func (p *EventPublisher) Event() *Event {
 }
 
 func (p *EventPublisher) Publish() {
-	// This is a kludge to find the form that the event publisher is
-	// affiliated with. It's only necessary because the event publisher
-	// doesn't keep a pointer to the form on its own, and the call
-	// to Publish isn't providing it either.
-	if form := App().ActiveForm(); form != nil {
-		fb := form.AsFormBase()
-		fb.inProgressEventCount++
-		defer func() {
-			fb.inProgressEventCount--
-			if fb.inProgressEventCount == 0 && fb.layoutScheduled {
-				fb.layoutScheduled = false
-				fb.startLayout()
-			}
-		}()
-	}
-
 	for i, h := range p.event.handlers {
 		if h.handler != nil {
 			h.handler()

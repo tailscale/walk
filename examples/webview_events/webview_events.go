@@ -20,12 +20,17 @@ type MainWin struct {
 }
 
 func main() {
-	mainWin, err := NewMainWin()
+	app, err := walk.InitApp()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	mainWin.Run()
+	_, err = NewMainWin()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	app.Run()
 }
 
 func NewMainWin() (*MainWin, error) {

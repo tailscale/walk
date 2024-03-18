@@ -11,28 +11,64 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"syscall"
+	"unsafe"
 
 	"github.com/dblohm7/wingoes/com"
 	"github.com/tailscale/win"
 	"golang.org/x/sys/windows"
 )
 
-var (
-	gdiplusInit      sync.Once
-	gdiplusInitError error
-)
+var gdiplusCtx gdiplusContext
 
-func ensureGDIPlus() error {
-	gdiplusInit.Do(func() {
+type gdiplusContext struct {
+	once    sync.Once
+	initErr error
+	fnPtrs  win.GdiplusStartupOutput
+}
+
+func (gc *gdiplusContext) notifyUIThread() {
+	if gc.fnPtrs.NotificationHook == 0 {
+		return
+	}
+
+	var token uintptr
+	ret, _, _ := syscall.SyscallN(gc.fnPtrs.NotificationHook, uintptr(unsafe.Pointer(&token)))
+	if status := win.GpStatus(ret); status != win.Ok {
+		gc.initErr = newError(fmt.Sprintf("GDI+ notification hook failed with status '%s'", status))
+	}
+}
+
+func (gc *gdiplusContext) init() {
+	gc.once.Do(func() {
 		var token uintptr
 		si := win.GdiplusStartupInput{
-			GdiplusVersion: 1,
+			GdiplusVersion:           1,
+			SuppressBackgroundThread: win.TRUE,
 		}
-		if status := win.GdiplusStartup(&token, &si, nil); status != win.Ok {
-			gdiplusInitError = newError(fmt.Sprintf("GdiplusStartup failed with status '%s'", status))
+		if status := win.GdiplusStartup(&token, &si, &gc.fnPtrs); status != win.Ok {
+			gc.initErr = newError(fmt.Sprintf("GdiplusStartup failed with status '%s'", status))
+			return
 		}
+		gc.notifyUIThread()
 	})
-	return gdiplusInitError
+}
+
+func (gc *gdiplusContext) ensure() error {
+	gc.once.Do(func() {
+		panic("application not initialized")
+	})
+	return gc.initErr
+}
+
+func init() {
+	AppendToWalkInit(func() {
+		gdiplusCtx.init()
+	})
+}
+
+func ensureGDIPlus() error {
+	return gdiplusCtx.ensure()
 }
 
 // GDIPlusCanvas facilitates performing graphics operations against a rendering

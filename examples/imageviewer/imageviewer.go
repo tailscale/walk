@@ -8,18 +8,22 @@ import (
 	"log"
 	"path"
 	"strings"
-)
 
-import (
 	"github.com/tailscale/walk"
+
 	. "github.com/tailscale/walk/declarative"
 )
 
 func main() {
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	mw := new(MyMainWindow)
 	var openAction *walk.Action
 
-	if _, err := (MainWindow{
+	if err := (MainWindow{
 		AssignTo: &mw.MainWindow,
 		Title:    "Walk Image Viewer Example",
 		MenuItems: []MenuItem{
@@ -60,9 +64,11 @@ func main() {
 				AssignTo: &mw.tabWidget,
 			},
 		},
-	}.Run()); err != nil {
+	}.Create()); err != nil {
 		log.Fatal(err)
 	}
+
+	app.Run()
 }
 
 type MyMainWindow struct {

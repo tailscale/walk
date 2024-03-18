@@ -163,12 +163,6 @@ func init() {
 }
 
 func (dlg *FileDialog) ShowBrowseFolder(owner Form) (accepted bool, err error) {
-	// Calling OleInitialize (or similar) is required for BIF_NEWDIALOGSTYLE.
-	if hr := win.OleInitialize(); hr != win.S_OK && hr != win.S_FALSE {
-		return false, newError(fmt.Sprint("OleInitialize Error: ", hr))
-	}
-	defer win.OleUninitialize()
-
 	var ownerHwnd win.HWND
 	if owner != nil {
 		ownerHwnd = owner.Handle()

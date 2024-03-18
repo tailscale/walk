@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package declarative
@@ -197,20 +198,6 @@ func (mw MainWindow) Create() error {
 
 		return nil
 	})
-}
-
-func (mw MainWindow) Run() (int, error) {
-	var w *walk.MainWindow
-
-	if mw.AssignTo == nil {
-		mw.AssignTo = &w
-	}
-
-	if err := mw.Create(); err != nil {
-		return 0, err
-	}
-
-	return (*mw.AssignTo).Run(), nil
 }
 
 type StatusBarItem struct {

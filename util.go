@@ -627,30 +627,6 @@ func scaleSIZE(value win.SIZE, scale float64) win.SIZE {
 	}
 }
 
-// Max returns the largest value in values. It panics if len(values) == 0.
-func Max[O constraints.Ordered](values ...O) (ret O) {
-	ret = values[0]
-	for _, v := range values[1:] {
-		if v > ret {
-			ret = v
-		}
-	}
-
-	return ret
-}
-
-// Min returns the smallest value in values. It panics if len(values) == 0.
-func Min[O constraints.Ordered](values ...O) (ret O) {
-	ret = values[0]
-	for _, v := range values[1:] {
-		if v < ret {
-			ret = v
-		}
-	}
-
-	return ret
-}
-
 func ptInRect(pt win.POINT, rect win.RECT) bool {
 	// win.RECT Left and Top are inclusive, Right and Bottom are exclusive
 	return pt.X >= rect.Left && pt.X < rect.Right && pt.Y >= rect.Top && pt.Y < rect.Bottom

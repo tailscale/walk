@@ -21,12 +21,17 @@ func main() {
 		walk.ValidationErrorEffect, _ = walk.NewBorderGlowEffect(walk.RGB(255, 0, 0))
 	})
 
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	var mw *walk.MainWindow
 	var outTE *walk.TextEdit
 
 	animal := new(Animal)
 
-	if _, err := (MainWindow{
+	if err := (MainWindow{
 		AssignTo: &mw,
 		Title:    "Walk Data Binding Example",
 		MinSize:  Size{300, 200},
@@ -51,9 +56,11 @@ func main() {
 				Text:     fmt.Sprintf("%+v", animal),
 			},
 		},
-	}.Run()); err != nil {
+	}.Create()); err != nil {
 		log.Fatal(err)
 	}
+
+	app.Run()
 }
 
 type Animal struct {
@@ -116,7 +123,7 @@ func RunAnimalDialog(owner walk.Form, animal *Animal) (int, error) {
 	var db *walk.DataBinder
 	var acceptPB, cancelPB *walk.PushButton
 
-	return Dialog{
+	if err := (Dialog{
 		AssignTo:      &dlg,
 		Title:         Bind("'Animal Details' + (animal.Name == '' ? '' : ' - ' + animal.Name)"),
 		DefaultButton: &acceptPB,
@@ -250,5 +257,9 @@ func RunAnimalDialog(owner walk.Form, animal *Animal) (int, error) {
 				},
 			},
 		},
-	}.Run(owner)
+	}).Create(owner); err != nil {
+		return 0, err
+	}
+
+	return dlg.Run(), nil
 }

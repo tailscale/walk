@@ -5,11 +5,18 @@
 package main
 
 import (
+	"log"
+
 	"github.com/tailscale/walk"
 	. "github.com/tailscale/walk/declarative"
 )
 
 func main() {
+	app, err := walk.InitApp()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	walk.Resources.SetRootDirPath("../img")
 
 	type Mode struct {
@@ -47,5 +54,7 @@ func main() {
 		Size:     Size{400, 600},
 		Layout:   Grid{Columns: 2},
 		Children: widgets,
-	}.Run()
+	}.Create()
+
+	app.Run()
 }
