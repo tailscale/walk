@@ -499,7 +499,7 @@ func mustAllocWindowClassMessage(className string) (msg uint32) {
 //
 // AllocWindowClassMessage must be called from the main goroutine.
 func AllocWindowClassMessage(className string) (uint32, error) {
-	App().AssertUIThread()
+	appSingleton.AssertUIThread()
 	if wcInfo := registeredWindowClasses[className]; wcInfo != nil {
 		return wcInfo.allocMessage()
 	}
