@@ -2671,7 +2671,7 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 			return win.CallWindowProc(prevWndProc, hwnd, msg, wParam, lParam)
 		}
 
-	case App().cloakChangeMsg:
+	case appSingleton.cloakChangeMsg:
 		// No-op at the moment until we make window visibility aware of cloaking.
 		return 0
 	}

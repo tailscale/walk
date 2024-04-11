@@ -142,9 +142,8 @@ func init() {
 }
 
 var (
-	appOnce         onceWithPreInit
-	appSingleton    Application
-	appSingletonPtr *Application
+	appOnce      onceWithPreInit
+	appSingleton Application
 )
 
 // InitApp must be the first walk function called by the application. It
@@ -165,19 +164,18 @@ func InitApp() (app *Application, err error) {
 		}
 	}
 
-	appSingletonPtr = &appSingleton
 	return &appSingleton, nil
 }
 
 // App returns the *Application singleton. It panics if InitApp has not been
-// called yet and returns nil if InitApp failed.
+// called yet.
 //
 // App may be called from any goroutine once InitApp has completed successfully.
 func App() *Application {
 	appOnce.Init(func() {
 		panic("walk.InitApp must be called first")
 	})
-	return appSingletonPtr
+	return &appSingleton
 }
 
 // OrganizationName returns the string previously set by SetOrganizationName.
