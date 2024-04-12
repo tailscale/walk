@@ -314,7 +314,7 @@ func (app *Application) init() (finalInitOutsideOnce func() error, err error) {
 	// Cloaking is a DWM feature that makes windows invisible, even if they're
 	// still "visible" in the traditional sense. This is used by features like
 	// virtual desktops. This hook allows us to gain insight as to when a window
-	// has been (de)cloaked, which is useful for occulsion detection, animations,
+	// has been (de)cloaked, which is useful for occlusion detection, animations,
 	// timers, etc. It's non-fatal if this call returns an error.
 	app.winEventHook, _ = win.SetWinEventHook(
 		win.EVENT_OBJECT_CLOAKED, win.EVENT_OBJECT_UNCLOAKED,
@@ -762,7 +762,7 @@ func (app *Application) toolTip() *ToolTip {
 	return app.pToolTip
 }
 
-// EnableMessageFilterHooks controls whether WH_CALLWNDPROC hooks are invoked
+// EnableMessageFilterHooks controls whether WH_MSGFILTER hooks are invoked
 // during modal message loops. These hooks are disabled by default. This
 // method must be called from the main goroutine.
 func (app *Application) EnableMessageFilterHooks(enable bool) {
