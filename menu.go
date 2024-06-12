@@ -318,6 +318,10 @@ func (m *Menu) onActionChanged(action *Action) error {
 		if !win.CheckMenuRadioItem(m.hMenu, uint32(first), uint32(last), uint32(index), win.MF_BYPOSITION) {
 			return newError("CheckMenuRadioItem failed")
 		}
+
+		if err := m.actions.uncheckActionsForExclusiveCheck(first, last, index); err != nil {
+			return err
+		}
 	}
 
 	return nil

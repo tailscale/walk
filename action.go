@@ -522,7 +522,7 @@ func (a *Action) Triggered() *Event {
 
 func (a *Action) raiseTriggered() {
 	if a.Checkable() {
-		a.SetChecked(!a.Checked())
+		a.SetChecked(a.Exclusive() || !a.Checked())
 	}
 
 	a.triggeredPublisher.Publish()

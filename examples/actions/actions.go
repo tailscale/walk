@@ -5,13 +5,16 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"strings"
 
 	"github.com/tailscale/walk"
 
 	. "github.com/tailscale/walk/declarative"
 )
 
+var viewModes [4]*walk.Action
 var isSpecialMode = walk.NewMutableCondition()
 
 type MyMainWindow struct {
@@ -112,16 +115,34 @@ func main() {
 					Image: "../img/document-properties.png",
 					Items: []MenuItem{
 						Action{
+							AssignTo:    &viewModes[0],
 							Text:        "X",
 							OnTriggered: mw.changeViewAction_Triggered,
+							Checkable:   true,
+							Exclusive:   true,
 						},
 						Action{
+							AssignTo:    &viewModes[1],
+							Text:        "(Hidden)",
+							OnTriggered: mw.changeViewAction_Triggered,
+							Checkable:   true,
+							Exclusive:   true,
+							Visible:     false,
+							Checked:     true,
+						},
+						Action{
+							AssignTo:    &viewModes[2],
 							Text:        "Y",
 							OnTriggered: mw.changeViewAction_Triggered,
+							Checkable:   true,
+							Exclusive:   true,
 						},
 						Action{
+							AssignTo:    &viewModes[3],
 							Text:        "Z",
 							OnTriggered: mw.changeViewAction_Triggered,
+							Checkable:   true,
+							Exclusive:   true,
 						},
 					},
 				},
@@ -197,7 +218,14 @@ func (mw *MyMainWindow) newAction_Triggered() {
 }
 
 func (mw *MyMainWindow) changeViewAction_Triggered() {
-	walk.MsgBox(mw, "Change View", "By now you may have guessed it. Nothing changed.", walk.MsgBoxIconInformation)
+	var msg strings.Builder
+	msg.WriteString("Current view mode:\n")
+	for _, m := range viewModes {
+		if m.Checked() {
+			fmt.Fprintf(&msg, " - %s\n", m.Text())
+		}
+	}
+	walk.MsgBox(mw, "Change View", msg.String(), walk.MsgBoxIconInformation)
 }
 
 func (mw *MyMainWindow) showAboutBoxAction_Triggered() {
