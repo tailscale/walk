@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package declarative
@@ -27,6 +28,7 @@ type Action struct {
 	Shortcut    Shortcut
 	OnTriggered walk.EventHandler
 	Checkable   bool
+	Exclusive   bool
 }
 
 func (a Action) createAction(builder *Builder, menu *walk.Menu) (*walk.Action, error) {
@@ -54,6 +56,10 @@ func (a Action) createAction(builder *Builder, menu *walk.Menu) (*walk.Action, e
 	}
 
 	if err := action.SetCheckable(a.Checkable || action.CheckedCondition() != nil); err != nil {
+		return nil, err
+	}
+
+	if err := action.SetExclusive(a.Exclusive); err != nil {
 		return nil, err
 	}
 

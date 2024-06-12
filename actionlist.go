@@ -7,6 +7,8 @@
 
 package walk
 
+import "errors"
+
 type actionListObserver interface {
 	onInsertedAction(action *Action) error
 	onRemovingAction(action *Action) error
@@ -145,6 +147,41 @@ func (l *ActionList) positionsForExclusiveCheck(action *Action) (first, last, in
 	}
 
 	return first, last, index, nil
+}
+
+// uncheckActionsForExclusiveCheck marks actions that have positional index values
+// between first and last, excluding the checked action, as unchecked.
+func (l *ActionList) uncheckActionsForExclusiveCheck(first, last, checked int) error {
+	if first < 0 || first > last {
+		return errors.New("first must be >= 0 and <= last")
+	}
+	if checked < first || checked > last {
+		return errors.New("checked must be >= first and <= last")
+	}
+	if first == last {
+		return nil
+	}
+
+	i := -1
+	for _, a := range l.actions {
+		if a.Visible() {
+			i++
+			if i == checked {
+				continue
+			}
+		}
+		if i < first {
+			continue
+		}
+		if i > last {
+			break
+		}
+		if err := a.SetChecked(false); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (l *ActionList) Insert(index int, action *Action) error {
