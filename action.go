@@ -8,6 +8,8 @@
 package walk
 
 import (
+	"runtime"
+
 	"github.com/tailscale/walk/idalloc"
 	"github.com/tailscale/win"
 )
@@ -90,50 +92,66 @@ func NewAction() *Action {
 		id:      allocActionID(),
 		visible: true,
 	}
-
-	actionsById[a.id] = a
-
+	runtime.SetFinalizer(a, (*Action).finalize)
 	return a
 }
 
 func NewMenuAction(menu *Menu) *Action {
 	a := NewAction()
 	a.menu = menu
-
 	return a
 }
 
 func NewSeparatorAction() *Action {
-	return &Action{
+	a := &Action{
 		enabled: true,
 		visible: true,
 	}
+	runtime.SetFinalizer(a, (*Action).finalize)
+	return a
+}
+
+func (a *Action) Dispose() {
+	a.SetEnabledCondition(nil)
+	a.SetVisibleCondition(nil)
+
+	if a.menu != nil {
+		a.menu.actions.Clear()
+		a.menu.Dispose()
+	}
+
+	if a.ownerDrawInfo != nil {
+		a.ownerDrawInfo.Dispose()
+		a.ownerDrawInfo = nil
+	}
+}
+
+func (a *Action) finalize() {
+	if app := App(); !app.IsUIThread() {
+		app.Synchronize(a.finalize)
+		return
+	}
+	a.Dispose()
+	freeActionID(a.id)
 }
 
 func (a *Action) addRef() {
 	a.refCount++
+	if a.refCount == 1 {
+		actionsById[a.id] = a
+		if sc := a.shortcut; sc.Key != 0 {
+			shortcut2Action[sc] = a
+		}
+	}
 }
 
 func (a *Action) release() {
 	a.refCount--
-
 	if a.refCount == 0 {
-		a.SetEnabledCondition(nil)
-		a.SetVisibleCondition(nil)
-
-		if a.menu != nil {
-			a.menu.actions.Clear()
-			a.menu.Dispose()
-		}
-
-		if a.ownerDrawInfo != nil {
-			a.ownerDrawInfo.Dispose()
-			a.ownerDrawInfo = nil
-		}
-
 		delete(actionsById, a.id)
-		freeActionID(a.id)
-		delete(shortcut2Action, a.shortcut)
+		if sc := a.shortcut; sc.Key != 0 && shortcut2Action[sc] == a {
+			delete(shortcut2Action, sc)
+		}
 	}
 }
 
@@ -298,6 +316,7 @@ func (a *Action) EnabledCondition() Condition {
 }
 
 func (a *Action) SetEnabledCondition(c Condition) {
+	prev := a.enabledCondition
 	if a.enabledCondition != nil {
 		a.enabledCondition.Changed().Detach(a.enabledConditionChangedHandle)
 	}
@@ -316,7 +335,9 @@ func (a *Action) SetEnabledCondition(c Condition) {
 		})
 	}
 
-	a.raiseChanged()
+	if prev != c {
+		a.raiseChanged()
+	}
 }
 
 func (a *Action) Exclusive() bool {
@@ -372,19 +393,23 @@ func (a *Action) SetShortcut(shortcut Shortcut) (err error) {
 			}
 		}()
 
-		if err = a.raiseChanged(); err != nil {
+		if err := a.raiseChanged(); err != nil {
 			a.shortcut = old
 			a.raiseChanged()
-		} else {
+			return err
+		}
+
+		if a.refCount > 0 {
 			if shortcut.Key == 0 {
-				delete(shortcut2Action, old)
+				if shortcut2Action[old] == a {
+					delete(shortcut2Action, old)
+				}
 			} else {
 				shortcut2Action[shortcut] = a
 			}
 		}
 	}
-
-	return
+	return nil
 }
 
 func (a *Action) Text() string {
@@ -495,6 +520,7 @@ func (a *Action) VisibleCondition() Condition {
 }
 
 func (a *Action) SetVisibleCondition(c Condition) {
+	prev := a.visibleCondition
 	if a.visibleCondition != nil {
 		a.visibleCondition.Changed().Detach(a.visibleConditionChangedHandle)
 	}
@@ -513,7 +539,9 @@ func (a *Action) SetVisibleCondition(c Condition) {
 		})
 	}
 
-	a.raiseChanged()
+	if prev != c {
+		a.raiseChanged()
+	}
 }
 
 func (a *Action) Triggered() *Event {

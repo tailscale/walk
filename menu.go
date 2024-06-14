@@ -171,7 +171,9 @@ func (m *Menu) updateItemsForWindow(window Window) {
 			fallthrough
 		case action.image != nil:
 			m.onActionChanged(action)
-		case action.menu != nil:
+		}
+
+		if action.menu != nil {
 			action.menu.updateItemsForWindow(window)
 		}
 	}
