@@ -144,7 +144,10 @@ func (fb *FormBase) init(form Form) error {
 	}
 
 	fb.performLayout, fb.layoutResults, fb.inSizeLoop, fb.updateStopwatch, fb.quitLayoutPerformer = startLayoutPerformer(fb)
+	return nil
+}
 
+func (fb *FormBase) start() {
 	if fb.owner != nil {
 		invalidateDescendentBorders := func() {
 			walkDescendants(fb.owner, func(wnd Window) bool {
@@ -173,8 +176,6 @@ func (fb *FormBase) init(form Form) error {
 	}
 
 	fb.SetSuspended(false)
-
-	return nil
 }
 
 func (fb *FormBase) Dispose() {
@@ -558,6 +559,8 @@ func (fb *FormBase) Show() {
 	if p, ok := fb.window.(Persistable); ok && p.Persistent() && App().Settings() != nil {
 		p.RestoreState()
 	}
+
+	fb.start()
 
 	fb.window.SetVisible(true)
 }
