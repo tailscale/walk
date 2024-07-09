@@ -137,7 +137,7 @@ func (a *Action) finalize() {
 
 func (a *Action) addRef() {
 	a.refCount++
-	if a.refCount == 1 {
+	if a.refCount == 1 && a.id > maxReservedID {
 		actionsById[a.id] = a
 		if sc := a.shortcut; sc.Key != 0 {
 			shortcut2Action[sc] = a
@@ -147,7 +147,7 @@ func (a *Action) addRef() {
 
 func (a *Action) release() {
 	a.refCount--
-	if a.refCount == 0 {
+	if a.refCount == 0 && a.id > maxReservedID {
 		delete(actionsById, a.id)
 		if sc := a.shortcut; sc.Key != 0 && shortcut2Action[sc] == a {
 			delete(shortcut2Action, sc)
@@ -400,11 +400,10 @@ func (a *Action) SetShortcut(shortcut Shortcut) (err error) {
 		}
 
 		if a.refCount > 0 {
-			if shortcut.Key == 0 {
-				if shortcut2Action[old] == a {
-					delete(shortcut2Action, old)
-				}
-			} else {
+			if shortcut2Action[old] == a {
+				delete(shortcut2Action, old)
+			}
+			if shortcut.Key != 0 {
 				shortcut2Action[shortcut] = a
 			}
 		}
