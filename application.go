@@ -654,7 +654,15 @@ func DefaultModalPreTranslate(m Modal, msg *win.MSG) bool {
 		return true
 	}
 
-	return win.IsDialogMessage(hwnd, msg)
+	if !win.IsDialogMessage(hwnd, msg) {
+		return false
+	}
+
+	// IsDialogMessage dispatched the message. Trigger OnPostDispatch if present.
+	if postDisp, hasPostDisp := m.(PostDispatchHandler); hasPostDisp {
+		postDisp.OnPostDispatch()
+	}
+	return true
 }
 
 func (app *Application) appendToWalkInit(fn func()) {

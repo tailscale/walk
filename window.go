@@ -202,6 +202,10 @@ type Window interface {
 	// Name returns the name of the Window.
 	Name() string
 
+	// RedrawAll schedules a full erase and repaint of the Window, including its
+	// non-client area (if any) and its children.
+	RedrawAll() error
+
 	// RequestLayout either schedules or immediately starts performing layout.
 	RequestLayout()
 
@@ -932,17 +936,22 @@ func (wb *WindowBase) AddDisposable(d Disposable) {
 // Also, if a Container is disposed of, all its descendants will be released
 // as well.
 func (wb *WindowBase) Dispose() {
-	if wb.hWnd != 0 {
-		// The actual work is done by disposeInternal, which is called by the
-		// WM_DESTROY handler.
-		win.DestroyWindow(wb.hWnd)
+	if wb.hWnd == 0 {
+		wb.disposeInternal(0)
+		return
 	}
+
+	// The actual work is done by disposeInternal, which is called by the
+	// WM_DESTROY handler.
+	win.DestroyWindow(wb.hWnd)
 }
 
 func (wb *WindowBase) disposeInternal(hwnd win.HWND) {
 	defer func() {
-		delete(hwnd2WindowBase, hwnd)
-		wb.hWnd = 0
+		if hwnd != 0 {
+			delete(hwnd2WindowBase, hwnd)
+			wb.hWnd = 0
+		}
 	}()
 
 	wb.disposingPublisher.Publish()
@@ -1290,16 +1299,21 @@ func (wb *WindowBase) SetSuspended(suspend bool) {
 		wParam = 1
 	}
 
-	if wb.visible {
-		wb.SendMessage(win.WM_SETREDRAW, uintptr(wParam), 0)
-	}
-
+	wb.SendMessage(win.WM_SETREDRAW, uintptr(wParam), 0)
 	wb.suspended = suspend
-
 	if !suspend && wb.visible {
-		wb.Invalidate()
+		// Per WM_SETREDRAW docs, we should do a full RedrawWindow instead of InvalidateRect
+		wb.RedrawAll()
 		wb.RequestLayout()
 	}
+}
+
+func (wb *WindowBase) RedrawAll() error {
+	if !win.RedrawWindow(wb.hWnd, nil, 0, win.RDW_ERASE|win.RDW_FRAME|win.RDW_INVALIDATE|win.RDW_ALLCHILDREN) {
+		return newError("RedrawWindow failed")
+	}
+
+	return nil
 }
 
 // Invalidate schedules a full repaint of the *WindowBase.

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -88,6 +89,8 @@ type Widget interface {
 
 	// ToolTipText returns the tool tip text of the Widget.
 	ToolTipText() string
+
+	ancestor() Form
 }
 
 type WidgetBase struct {
@@ -499,8 +502,11 @@ func ancestor(w Widget) Form {
 	if w == nil {
 		return nil
 	}
+	return w.ancestor()
+}
 
-	hWndRoot := win.GetAncestor(w.Handle(), win.GA_ROOT)
+func (wb *WidgetBase) ancestor() Form {
+	hWndRoot := win.GetAncestor(wb.Handle(), win.GA_ROOT)
 
 	rw, _ := windowFromHandle(hWndRoot).(Form)
 	return rw
@@ -524,4 +530,11 @@ func (wb *WidgetBase) MinSizeHint() Size {
 	}
 
 	return Size{}
+}
+
+func (wb *WidgetBase) OnPostDispatch() {
+	// Messages dispatched to wb might affect layout of the form that owns it.
+	if f, ok := wb.ancestor().(PostDispatchHandler); ok {
+		f.OnPostDispatch()
+	}
 }
