@@ -244,6 +244,16 @@ func (t *Theme) SysFont(fontID int32) (*Font, error) {
 	return newFontFromLOGFONT(&lf, screenDPI())
 }
 
+// Color obtains the theme's color associated with t and the provided
+// part, state, and property IDs.
+func (t *Theme) Color(partID, stateID, propID int32) (cr win.COLORREF, _ error) {
+	hr := win.GetThemeColor(t.htheme, partID, stateID, propID, &cr)
+	if win.FAILED(hr) {
+		return 0, errorFromHRESULT("GetThemeColor", hr)
+	}
+	return cr, nil
+}
+
 // isTrueSize determines whether the theme component with the given partID and
 // stateID is a "true-size" component: such components are not scaled linearly,
 // but rather consist of multiple raster images, one of which is chosen
