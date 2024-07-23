@@ -101,6 +101,7 @@ type Font struct {
 	Family    string `xml:"family"`
 	PointSize int    `xml:"pointsize"`
 	Italic    bool   `xml:"italic"`
+	SemiBold  bool   `xml:"semibold"`
 	Bold      bool   `xml:"bold"`
 	Underline bool   `xml:"underline"`
 	StrikeOut bool   `xml:"strikeout"`
@@ -236,8 +237,8 @@ func writeProperty(buf *bytes.Buffer, prop *Property, qualifiedReceiver string, 
 		}
 		buf.WriteString(fmt.Sprintf("if font, err = walk.NewFont(\"%s\", %d, ",
 			family, pointSize))
-		included := []bool{f.Bold, f.Italic, f.StrikeOut, f.Underline}
-		flags := []string{"walk.FontBold", "walk.FontItalic", "walk.FontStrikeOut", "walk.FontUnderline"}
+		included := []bool{f.SemiBold, f.Bold, f.Italic, f.StrikeOut, f.Underline}
+		flags := []string{"walk.FontSemiBold", "walk.FontBold", "walk.FontItalic", "walk.FontStrikeOut", "walk.FontUnderline"}
 		var includedFlags []string
 		for i := 0; i < len(included); i++ {
 			if included[i] {

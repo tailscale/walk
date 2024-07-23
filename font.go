@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -9,9 +10,7 @@ package walk
 import (
 	"syscall"
 	"unsafe"
-)
 
-import (
 	"github.com/tailscale/win"
 )
 
@@ -19,10 +18,11 @@ type FontStyle byte
 
 // Font style flags
 const (
-	FontBold      FontStyle = 0x01
-	FontItalic    FontStyle = 0x02
-	FontUnderline FontStyle = 0x04
-	FontStrikeOut FontStyle = 0x08
+	FontSemiBold  FontStyle = 0x01
+	FontBold      FontStyle = 0x02
+	FontItalic    FontStyle = 0x04
+	FontUnderline FontStyle = 0x08
+	FontStrikeOut FontStyle = 0x10
 )
 
 var (
@@ -57,8 +57,11 @@ type Font struct {
 
 // NewFont returns a new Font with the specified attributes.
 func NewFont(family string, pointSize int, style FontStyle) (*Font, error) {
-	if style > FontBold|FontItalic|FontUnderline|FontStrikeOut {
+	if style > FontSemiBold|FontBold|FontItalic|FontUnderline|FontStrikeOut {
 		return nil, newError("invalid style")
+	}
+	if (style & (FontSemiBold | FontBold)) == FontSemiBold|FontBold {
+		return nil, newError("invalid style: semi-bold and bold are mutually-exclusive")
 	}
 
 	fi := fontInfo{
@@ -94,7 +97,9 @@ func newFontFromLOGFONT(lf *win.LOGFONT, dpi int) (*Font, error) {
 	}
 
 	var style FontStyle
-	if lf.LfWeight > win.FW_NORMAL {
+	if lf.LfWeight > win.FW_NORMAL && lf.LfWeight <= win.FW_SEMIBOLD {
+		style |= FontSemiBold
+	} else if lf.LfWeight > win.FW_SEMIBOLD {
 		style |= FontBold
 	}
 	if lf.LfItalic == win.TRUE {
@@ -146,8 +151,12 @@ func (f *Font) createForDPI(dpi int) (win.HFONT, error) {
 	return hFont, nil
 }
 
-// Bold returns if text drawn using the Font appears with
-// greater weight than normal.
+// SemiBold returns if text drawn using the Font appears with semi-bold weight.
+func (f *Font) SemiBold() bool {
+	return f.style&FontBold > 0
+}
+
+// Bold returns if text drawn using the Font appears with bold weight.
 func (f *Font) Bold() bool {
 	return f.style&FontBold > 0
 }
