@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package declarative
@@ -13,6 +14,7 @@ import (
 type Font struct {
 	Family    string
 	PointSize int
+	SemiBold  bool
 	Bold      bool
 	Italic    bool
 	Underline bool
@@ -26,7 +28,9 @@ func (f Font) Create() (*walk.Font, error) {
 
 	var fs walk.FontStyle
 
-	if f.Bold {
+	if f.SemiBold {
+		fs |= walk.FontSemiBold
+	} else if f.Bold {
 		fs |= walk.FontBold
 	}
 	if f.Italic {
