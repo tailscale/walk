@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -12,10 +13,22 @@ import (
 
 type PushButton struct {
 	Button
+	contentMargins win.MARGINS
+	layoutFlags    LayoutFlags
 }
 
+// NewPushButton creates a new PushButton as a child of parent with its
+// LayoutFlags set to GrowableHorz.
 func NewPushButton(parent Container) (*PushButton, error) {
-	pb := new(PushButton)
+	return NewPushButtonWithLayoutFlags(parent, GrowableHorz)
+}
+
+// NewPushButtonWithLayoutFlags creates a new PushButton as a child of parent
+// with its LayoutFlags set to layoutFlags.
+func NewPushButtonWithLayoutFlags(parent Container, layoutFlags LayoutFlags) (*PushButton, error) {
+	pb := &PushButton{
+		layoutFlags: layoutFlags,
+	}
 
 	if err := InitWidget(
 		pb,
@@ -110,9 +123,39 @@ func (pb *PushButton) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 
 	case win.WM_KILLFOCUS:
 		pb.ensureProperDialogDefaultButton(win.HWND(wParam))
+
+	case win.WM_THEMECHANGED:
+		pb.contentMargins = win.MARGINS{}
 	}
 
 	return pb.Button.WndProc(hwnd, msg, wParam, lParam)
+}
+
+func (pb *PushButton) ensureMargins() win.MARGINS {
+	var zeroMargins win.MARGINS
+	if pb.contentMargins != zeroMargins {
+		return pb.contentMargins
+	}
+
+	theme, err := pb.ThemeForClass(win.VSCLASS_BUTTON)
+	if err != nil {
+		return zeroMargins
+	}
+
+	result, err := theme.margins(win.BP_PUSHBUTTON, win.PBS_NORMAL, win.TMT_CONTENTMARGINS, nil)
+	if err != nil {
+		return zeroMargins
+	}
+
+	pb.contentMargins = result
+	return result
+}
+
+func (pb *PushButton) idealSize() Size {
+	s := pb.Button.idealSize().toSIZE()
+	m := MARGINSFrom96DPI(pb.ensureMargins(), pb.DPI())
+	addMargins(&s, m)
+	return sizeFromSIZE(s)
 }
 
 func (pb *PushButton) CreateLayoutItem(ctx *LayoutContext) LayoutItem {
@@ -120,13 +163,15 @@ func (pb *PushButton) CreateLayoutItem(ctx *LayoutContext) LayoutItem {
 		buttonLayoutItem: buttonLayoutItem{
 			idealSize: pb.idealSize(),
 		},
+		layoutFlags: pb.layoutFlags,
 	}
 }
 
 type pushButtonLayoutItem struct {
 	buttonLayoutItem
+	layoutFlags LayoutFlags
 }
 
-func (*pushButtonLayoutItem) LayoutFlags() LayoutFlags {
-	return GrowableHorz
+func (pbli *pushButtonLayoutItem) LayoutFlags() LayoutFlags {
+	return pbli.layoutFlags
 }

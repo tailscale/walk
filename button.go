@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -248,9 +249,9 @@ func (li *buttonLayoutItem) LayoutFlags() LayoutFlags {
 }
 
 func (li *buttonLayoutItem) IdealSize() Size {
-	return li.MinSize()
+	return li.idealSize
 }
 
 func (li *buttonLayoutItem) MinSize() Size {
-	return li.idealSize
+	return li.IdealSize()
 }

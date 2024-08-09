@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package declarative
@@ -48,9 +49,11 @@ type PushButton struct {
 
 	// Button
 
-	Image     Property
-	OnClicked walk.EventHandler
-	Text      Property
+	Image          Property
+	OnClicked      walk.EventHandler
+	Text           Property
+	LayoutFlags    walk.LayoutFlags // ignored unless UseLayoutFlags is true
+	UseLayoutFlags bool
 
 	// PushButton
 
@@ -58,8 +61,13 @@ type PushButton struct {
 	ImageAboveText bool
 }
 
-func (pb PushButton) Create(builder *Builder) error {
-	w, err := walk.NewPushButton(builder.Parent())
+func (pb PushButton) Create(builder *Builder) (err error) {
+	var w *walk.PushButton
+	if pb.UseLayoutFlags {
+		w, err = walk.NewPushButtonWithLayoutFlags(builder.Parent(), pb.LayoutFlags)
+	} else {
+		w, err = walk.NewPushButton(builder.Parent())
+	}
 	if err != nil {
 		return err
 	}
