@@ -487,22 +487,6 @@ func (odi *ownerDrawnMenuItemInfo) onMeasure(w Window, mis *win.MEASUREITEMSTRUC
 	mis.ItemWidth, mis.ItemHeight = odi.layout.measure(w, odi)
 }
 
-// addMargins accumulates the total width and height of m into sz.
-func addMargins(sz *win.SIZE, m win.MARGINS) {
-	sz.CX += m.LeftWidth + m.RightWidth
-	sz.CY += m.TopHeight + m.BottomHeight
-}
-
-// stripMargins adjusts the bounding box specified by r by removing the margins
-// specified by m. The resulting bounding box is offset within the initial
-// bounding box by the left and top margins.
-func stripMargins(r *win.RECT, m win.MARGINS) {
-	r.Left += m.LeftWidth
-	r.Top += m.TopHeight
-	r.Right -= m.RightWidth
-	r.Bottom -= m.BottomHeight
-}
-
 // themeStates holds the uxtheme part states for the various components of the
 // menu item.
 type themeStates struct {
