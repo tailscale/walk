@@ -262,8 +262,8 @@ func (mw *MainWindow) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 		// Ensure that all Closing event handlers have executed *before* we set
 		// the exit code.
 		if mw.FormBase.WndProc(hwnd, msg, wParam, lParam) == 0 {
+			mw.Dispose()
 			if !mw.exitOnCloseDisabled {
-				mw.Dispose()
 				App().Exit(mw.exitCode)
 			}
 			return 0
