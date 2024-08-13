@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -110,6 +111,26 @@ func (cw *CustomWidget) SetPaintMode(value PaintMode) {
 	cw.paintMode = value
 }
 
+func (cw *CustomWidget) doPaint(ps *win.PAINTSTRUCT) error {
+	hdc := ps.Hdc
+	canvas, err := newCanvasFromHDC(hdc)
+	if err != nil {
+		return newError("newCanvasFromHDC failed")
+	}
+	defer canvas.Dispose()
+
+	bounds := rectangleFromRECT(ps.RcPaint)
+	if cw.paintMode == PaintBuffered {
+		err = cw.bufferedPaint(canvas, bounds)
+	} else if cw.paintPixels != nil {
+		err = cw.paintPixels(canvas, bounds)
+	} else {
+		err = cw.paint(canvas, RectangleTo96DPI(bounds, cw.DPI()))
+	}
+
+	return err
+}
+
 func (cw *CustomWidget) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
 	switch msg {
 	case win.WM_PAINT:
@@ -119,44 +140,12 @@ func (cw *CustomWidget) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintpt
 		}
 
 		var ps win.PAINTSTRUCT
-
-		var hdc win.HDC
-		if wParam == 0 {
-			hdc = win.BeginPaint(cw.hWnd, &ps)
-		} else {
-			hdc = win.HDC(wParam)
-		}
-		if hdc == 0 {
+		if hdc := win.BeginPaint(cw.hWnd, &ps); hdc == 0 {
 			newError("BeginPaint failed")
 			break
 		}
-		defer func() {
-			if wParam == 0 {
-				win.EndPaint(cw.hWnd, &ps)
-			}
-		}()
-
-		canvas, err := newCanvasFromHDC(hdc)
-		if err != nil {
-			newError("newCanvasFromHDC failed")
-			break
-		}
-		defer canvas.Dispose()
-
-		bounds := rectangleFromRECT(ps.RcPaint)
-		if cw.paintMode == PaintBuffered {
-			err = cw.bufferedPaint(canvas, bounds)
-		} else if cw.paintPixels != nil {
-			err = cw.paintPixels(canvas, bounds)
-		} else {
-			err = cw.paint(canvas, RectangleTo96DPI(bounds, cw.DPI()))
-		}
-
-		if err != nil {
-			newError("paint failed")
-			break
-		}
-
+		defer win.EndPaint(cw.hWnd, &ps)
+		cw.doPaint(&ps)
 		return 0
 
 	case win.WM_ERASEBKGND:
@@ -165,7 +154,18 @@ func (cw *CustomWidget) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintpt
 		}
 
 	case win.WM_PRINTCLIENT:
-		win.SendMessage(hwnd, win.WM_PAINT, wParam, lParam)
+		if cw.paint == nil && cw.paintPixels == nil {
+			newError("paint(Pixels) func is nil")
+			break
+		}
+
+		ps := win.PAINTSTRUCT{
+			Hdc: win.HDC(wParam),
+		}
+		if win.GetClientRect(cw.hWnd, &ps.RcPaint) {
+			cw.doPaint(&ps)
+		}
+		return 0
 
 	case win.WM_WINDOWPOSCHANGED:
 		wp := (*win.WINDOWPOS)(unsafe.Pointer(lParam))

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -195,12 +196,8 @@ func (cb *ContainerBase) RestoreState() error {
 	})
 }
 
-func (cb *ContainerBase) doPaint() error {
-	var ps win.PAINTSTRUCT
-
-	hdc := win.BeginPaint(cb.hWnd, &ps)
-	defer win.EndPaint(cb.hWnd, &ps)
-
+func (cb *ContainerBase) doPaint(ps *win.PAINTSTRUCT) error {
+	hdc := ps.Hdc
 	canvas, err := newCanvasFromHDC(hdc)
 	if err != nil {
 		return err
@@ -281,9 +278,26 @@ func (cb *ContainerBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintp
 			break
 		}
 
-		// If it fails, what can we do about it? Panic? That's extreme. So just ignore it.
-		_ = cb.doPaint()
+		var ps win.PAINTSTRUCT
+		if hdc := win.BeginPaint(cb.hWnd, &ps); hdc == 0 {
+			break
+		}
+		defer win.EndPaint(cb.hWnd, &ps)
 
+		cb.doPaint(&ps)
+		return 0
+
+	case win.WM_PRINTCLIENT:
+		if FocusEffect == nil && InteractionEffect == nil && ValidationErrorEffect == nil {
+			break
+		}
+
+		ps := win.PAINTSTRUCT{
+			Hdc: win.HDC(wParam),
+		}
+		if win.GetClientRect(cb.hWnd, &ps.RcPaint) {
+			cb.doPaint(&ps)
+		}
 		return 0
 
 	case win.WM_COMMAND:
