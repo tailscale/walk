@@ -1452,21 +1452,18 @@ func (wb *WindowBase) Visible() bool {
 
 // SetVisible sets if the *WindowBase is visible.
 func (wb *WindowBase) SetVisible(visible bool) {
-	old := wb.Visible()
+	if wb.Visible() != visible {
+		setWindowVisible(wb.hWnd, visible)
+	}
+}
 
-	setWindowVisible(wb.hWnd, visible)
-
+func (wb *WindowBase) updateVisibility(visible bool) {
 	wb.visible = visible
-
 	walkDescendants(wb.window, func(w Window) bool {
 		w.AsWindowBase().visibleChangedPublisher.Publish()
 
 		return true
 	})
-
-	if visible == old {
-		return
-	}
 
 	if widget, ok := wb.window.(Widget); ok {
 		wb := widget.AsWidgetBase()
@@ -2604,6 +2601,14 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 
 	case win.WM_WINDOWPOSCHANGED:
 		wp := (*win.WINDOWPOS)(unsafe.Pointer(lParam))
+
+		// Ensure that we're in sync with system state re: visibility
+		// and that VisibleChanged events are fired.
+		if wp.Flags&win.SWP_SHOWWINDOW != 0 {
+			wb.updateVisibility(true)
+		} else if wp.Flags&win.SWP_HIDEWINDOW != 0 {
+			wb.updateVisibility(false)
+		}
 
 		if wp.Flags&win.SWP_NOMOVE != 0 && wp.Flags&win.SWP_NOSIZE != 0 {
 			break
