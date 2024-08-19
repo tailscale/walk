@@ -22,8 +22,11 @@ func init() {
 }
 
 type MainWindowCfg struct {
-	Name   string
-	Bounds Rectangle
+	Name            string
+	Bounds          Rectangle
+	DisableMaximize bool // Omit the maximize button.
+	DisableMinimize bool // Omit the minimize button.
+	DisableResizing bool // Prevent the user from being able to resize the window.
 }
 
 type MainWindow struct {
@@ -48,10 +51,21 @@ func NewMainWindowWithCfg(cfg *MainWindowCfg) (*MainWindow, error) {
 	mw := new(MainWindow)
 	mw.SetName(cfg.Name)
 
+	style := uint32(win.WS_OVERLAPPEDWINDOW)
+	if cfg.DisableMaximize {
+		style ^= win.WS_MAXIMIZEBOX
+	}
+	if cfg.DisableMinimize {
+		style ^= win.WS_MINIMIZEBOX
+	}
+	if cfg.DisableResizing {
+		style ^= win.WS_THICKFRAME
+	}
+
 	if err := initWindowWithCfg(&windowCfg{
 		Window:    mw,
 		ClassName: mainWindowWindowClass,
-		Style:     win.WS_OVERLAPPEDWINDOW,
+		Style:     style,
 		ExStyle:   win.WS_EX_CONTROLPARENT,
 		Bounds:    cfg.Bounds,
 	}); err != nil {
@@ -271,4 +285,10 @@ func (mw *MainWindow) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 	}
 
 	return mw.FormBase.WndProc(hwnd, msg, wParam, lParam)
+}
+
+func (mw *MainWindow) Show() {
+	mw.FormBase.Show()
+	// Show performs a non-activating show, so we need to activate as well.
+	mw.Activate()
 }
