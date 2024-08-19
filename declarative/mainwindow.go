@@ -59,12 +59,18 @@ type MainWindow struct {
 	SuspendedUntilRun bool
 	ToolBar           ToolBar
 	ToolBarItems      []MenuItem // Deprecated: use ToolBar instead
+	DisableMaximize   bool       // Omit the maximize button.
+	DisableMinimize   bool       // Omit the minimize button.
+	DisableResizing   bool       // Prevent the user from being able to resize the window.
 }
 
 func (mw MainWindow) Create() error {
 	w, err := walk.NewMainWindowWithCfg(&walk.MainWindowCfg{
-		Name:   mw.Name,
-		Bounds: mw.Bounds.toW(),
+		Name:            mw.Name,
+		Bounds:          mw.Bounds.toW(),
+		DisableMaximize: mw.DisableMaximize,
+		DisableMinimize: mw.DisableMinimize,
+		DisableResizing: mw.DisableResizing,
 	})
 	if err != nil {
 		return err
