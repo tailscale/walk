@@ -8,6 +8,7 @@
 package walk
 
 import (
+	"math/bits"
 	"syscall"
 	"unsafe"
 
@@ -18,11 +19,19 @@ type FontStyle byte
 
 // Font style flags
 const (
-	FontSemiBold  FontStyle = 0x01
-	FontBold      FontStyle = 0x02
-	FontItalic    FontStyle = 0x04
-	FontUnderline FontStyle = 0x08
-	FontStrikeOut FontStyle = 0x10
+	FontNormal    FontStyle = 0
+	FontSemiLight FontStyle = (1 << iota)
+	FontLight
+	FontSemiBold
+	FontBold
+	FontItalic
+	FontUnderline
+	FontStrikeOut
+)
+
+const (
+	fontWeightBits = FontLight | FontSemiLight | FontSemiBold | FontBold
+	fontStyleBits  = fontWeightBits | FontItalic | FontUnderline | FontStrikeOut
 )
 
 var (
@@ -57,11 +66,11 @@ type Font struct {
 
 // NewFont returns a new Font with the specified attributes.
 func NewFont(family string, pointSize int, style FontStyle) (*Font, error) {
-	if style > FontSemiBold|FontBold|FontItalic|FontUnderline|FontStrikeOut {
+	if style > fontStyleBits {
 		return nil, newError("invalid style")
 	}
-	if (style & (FontSemiBold | FontBold)) == FontSemiBold|FontBold {
-		return nil, newError("invalid style: semi-bold and bold are mutually-exclusive")
+	if bits.OnesCount8(byte(style&fontWeightBits)) > 1 {
+		return nil, newError("invalid style: font weights are mutually-exclusive")
 	}
 
 	fi := fontInfo{
@@ -85,6 +94,8 @@ func NewFont(family string, pointSize int, style FontStyle) (*Font, error) {
 	return font, nil
 }
 
+const fontWeightSemiLight = (win.FW_LIGHT + win.FW_NORMAL) / 2
+
 func newFontFromLOGFONT(lf *win.LOGFONT, dpi int) (*Font, error) {
 	if lf == nil {
 		return nil, newError("lf cannot be nil")
@@ -97,11 +108,21 @@ func newFontFromLOGFONT(lf *win.LOGFONT, dpi int) (*Font, error) {
 	}
 
 	var style FontStyle
-	if lf.LfWeight > win.FW_NORMAL && lf.LfWeight <= win.FW_SEMIBOLD {
-		style |= FontSemiBold
-	} else if lf.LfWeight > win.FW_SEMIBOLD {
+
+	// This switch is ordered from heaviest weight to lightest weight.
+	switch {
+	case lf.LfWeight > win.FW_SEMIBOLD:
 		style |= FontBold
+	case lf.LfWeight > win.FW_NORMAL:
+		style |= FontSemiBold
+	case lf.LfWeight == win.FW_NORMAL:
+		// Just break
+	case lf.LfWeight >= fontWeightSemiLight:
+		style |= FontSemiLight
+	case lf.LfWeight >= win.FW_LIGHT:
+		style |= FontLight
 	}
+
 	if lf.LfItalic == win.TRUE {
 		style |= FontItalic
 	}
@@ -119,20 +140,31 @@ func (f *Font) createForDPI(dpi int) (win.HFONT, error) {
 	var lf win.LOGFONT
 
 	lf.LfHeight = -win.MulDiv(int32(f.pointSize), int32(dpi), 72)
-	if f.style&FontBold > 0 {
+	switch f.style & fontWeightBits {
+	case FontLight:
+		lf.LfWeight = win.FW_LIGHT
+	case FontSemiLight:
+		lf.LfWeight = fontWeightSemiLight
+	case FontSemiBold:
+		lf.LfWeight = win.FW_SEMIBOLD
+	case FontBold:
 		lf.LfWeight = win.FW_BOLD
-	} else {
+	default:
 		lf.LfWeight = win.FW_NORMAL
 	}
+
 	if f.style&FontItalic > 0 {
 		lf.LfItalic = 1
 	}
+
 	if f.style&FontUnderline > 0 {
 		lf.LfUnderline = 1
 	}
+
 	if f.style&FontStrikeOut > 0 {
 		lf.LfStrikeOut = 1
 	}
+
 	lf.LfCharSet = win.DEFAULT_CHARSET
 	lf.LfOutPrecision = win.OUT_TT_PRECIS
 	lf.LfClipPrecision = win.CLIP_DEFAULT_PRECIS
@@ -149,6 +181,16 @@ func (f *Font) createForDPI(dpi int) (win.HFONT, error) {
 	}
 
 	return hFont, nil
+}
+
+// SemiLight returns if text drawn using the Font appears with semi-light weight.
+func (f *Font) SemiLight() bool {
+	return f.style&FontSemiLight > 0
+}
+
+// Light returns if text drawn using the Font appears with light weight.
+func (f *Font) Light() bool {
+	return f.style&FontLight > 0
 }
 
 // SemiBold returns if text drawn using the Font appears with semi-bold weight.

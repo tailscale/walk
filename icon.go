@@ -50,35 +50,70 @@ func IconFrom(src interface{}, dpi int) (*Icon, error) {
 }
 
 func IconApplication() *Icon {
-	return stockIcon(win.IDI_APPLICATION)
+	return stockIcon(win.IDI_APPLICATION, false)
 }
 
 func IconError() *Icon {
-	return stockIcon(win.IDI_ERROR)
+	return stockIcon(win.IDI_ERROR, false)
 }
 
 func IconQuestion() *Icon {
-	return stockIcon(win.IDI_QUESTION)
+	return stockIcon(win.IDI_QUESTION, false)
 }
 
 func IconWarning() *Icon {
-	return stockIcon(win.IDI_WARNING)
+	return stockIcon(win.IDI_WARNING, false)
 }
 
 func IconInformation() *Icon {
-	return stockIcon(win.IDI_INFORMATION)
+	return stockIcon(win.IDI_INFORMATION, false)
 }
 
 func IconWinLogo() *Icon {
-	return stockIcon(win.IDI_WINLOGO)
+	return stockIcon(win.IDI_WINLOGO, false)
 }
 
 func IconShield() *Icon {
-	return stockIcon(win.IDI_SHIELD)
+	return stockIcon(win.IDI_SHIELD, false)
 }
 
-func stockIcon(id uintptr) *Icon {
-	return &Icon{res: win.MAKEINTRESOURCE(id), size96dpi: DefaultSmallIconSize(), isStock: true}
+func IconApplicationSmall() *Icon {
+	return stockIcon(win.IDI_APPLICATION, true)
+}
+
+func IconErrorSmall() *Icon {
+	return stockIcon(win.IDI_ERROR, true)
+}
+
+func IconQuestionSmall() *Icon {
+	return stockIcon(win.IDI_QUESTION, true)
+}
+
+func IconWarningSmall() *Icon {
+	return stockIcon(win.IDI_WARNING, true)
+}
+
+func IconInformationSmall() *Icon {
+	return stockIcon(win.IDI_INFORMATION, true)
+}
+
+func IconWinLogoSmall() *Icon {
+	return stockIcon(win.IDI_WINLOGO, true)
+}
+
+func IconShieldSmall() *Icon {
+	return stockIcon(win.IDI_SHIELD, true)
+}
+
+func stockIcon(id uintptr, small bool) *Icon {
+	var size Size
+	if small {
+		size = DefaultSmallIconSize()
+	} else {
+		size = DefaultIconSize()
+	}
+
+	return &Icon{res: win.MAKEINTRESOURCE(id), size96dpi: size, isStock: true}
 }
 
 // NewIconFromFile returns a new Icon, using the specified icon image file and default size.

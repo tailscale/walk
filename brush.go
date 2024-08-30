@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
 
 import (
+	"fmt"
 	"unsafe"
 
 	"github.com/tailscale/win"
@@ -96,6 +98,14 @@ func (bb *brushBase) handle() win.HBRUSH {
 	return bb.hBrush
 }
 
+func (bb *brushBase) logbrush() *win.LOGBRUSH {
+	lb := new(win.LOGBRUSH)
+	if win.GetObject(win.HGDIOBJ(bb.hBrush), unsafe.Sizeof(*lb), unsafe.Pointer(lb)) == 0 {
+		return nil
+	}
+	return lb
+}
+
 func (bb *brushBase) attachWindow(wb *WindowBase) {
 	if wb == nil {
 		return
@@ -120,44 +130,43 @@ func (bb *brushBase) detachWindow(wb *WindowBase) {
 	}
 }
 
-type nullBrush struct {
+type stockBrush struct {
 	brushBase
 }
 
-func newNullBrush() *nullBrush {
-	lb := &win.LOGBRUSH{LbStyle: win.BS_NULL}
-
-	hBrush := win.CreateBrushIndirect(lb)
-	if hBrush == 0 {
-		panic("failed to create null brush")
-	}
-
-	return &nullBrush{brushBase: brushBase{hBrush: hBrush}}
+func (sb *stockBrush) Dispose() {
+	// No-op for stock brushes
 }
 
-func (b *nullBrush) Dispose() {
-	if b == nullBrushSingleton {
-		return
-	}
-
-	b.brushBase.Dispose()
-}
-
-func (*nullBrush) logbrush() *win.LOGBRUSH {
-	return &win.LOGBRUSH{LbStyle: win.BS_NULL}
-}
-
-func (*nullBrush) simple() bool {
+func (sb *stockBrush) simple() bool {
 	return true
 }
 
+func newStockBrush(btype int32) *stockBrush {
+	hBrush := win.HBRUSH(win.GetStockObject(btype))
+	if hBrush == 0 {
+		panic(fmt.Sprintf("failed to create stock brush %d", btype))
+	}
+	return &stockBrush{brushBase: brushBase{hBrush: hBrush}}
+}
+
 var (
+	blackBrushSingleton  Brush
 	nullBrushSingleton   Brush
+	whiteBrushSingleton  Brush
 	sysColorBtnFaceBrush *SystemColorBrush
 )
 
+func BlackBrush() Brush {
+	return blackBrushSingleton
+}
+
 func NullBrush() Brush {
 	return nullBrushSingleton
+}
+
+func WhiteBrush() Brush {
+	return whiteBrushSingleton
 }
 
 type SystemColorBrush struct {
@@ -167,7 +176,9 @@ type SystemColorBrush struct {
 
 func init() {
 	AppendToWalkInit(func() {
-		nullBrushSingleton = newNullBrush()
+		blackBrushSingleton = newStockBrush(win.BLACK_BRUSH)
+		nullBrushSingleton = newStockBrush(win.NULL_BRUSH)
+		whiteBrushSingleton = newStockBrush(win.WHITE_BRUSH)
 		sysColorBtnFaceBrush, _ = NewSystemColorBrush(SysColorBtnFace)
 	})
 }
