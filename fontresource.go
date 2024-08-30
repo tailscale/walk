@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
 
 import (
-	"github.com/tailscale/win"
 	"syscall"
+
+	"github.com/tailscale/win"
 )
 
 // FontMemResource represents a font resource loaded into memory from
@@ -23,7 +25,7 @@ func newFontMemResource(resourceName *uint16) (*FontMemResource, error) {
 		return nil, lastError("GetModuleHandle")
 	}
 
-	hres := win.FindResource(hModule, resourceName, win.MAKEINTRESOURCE(8) /*RT_FONT*/)
+	hres := win.FindResource(hModule, resourceName, win.MAKEINTRESOURCE(win.RT_FONT))
 	if hres == win.HRSRC(0) {
 		return nil, lastError("FindResource")
 	}

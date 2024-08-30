@@ -14,6 +14,8 @@ import (
 type Font struct {
 	Family    string
 	PointSize int
+	Light     bool
+	SemiLight bool
 	SemiBold  bool
 	Bold      bool
 	Italic    bool
@@ -28,11 +30,17 @@ func (f Font) Create() (*walk.Font, error) {
 
 	var fs walk.FontStyle
 
-	if f.SemiBold {
+	switch {
+	case f.Light:
+		fs |= walk.FontLight
+	case f.SemiLight:
+		fs |= walk.FontSemiLight
+	case f.SemiBold:
 		fs |= walk.FontSemiBold
-	} else if f.Bold {
+	case f.Bold:
 		fs |= walk.FontBold
 	}
+
 	if f.Italic {
 		fs |= walk.FontItalic
 	}

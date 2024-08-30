@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package declarative
@@ -12,11 +13,25 @@ import (
 	"github.com/tailscale/walk"
 )
 
+type BlackBrush struct {
+}
+
+func (BlackBrush) Create() (walk.Brush, error) {
+	return walk.BlackBrush(), nil
+}
+
 type TransparentBrush struct {
 }
 
 func (TransparentBrush) Create() (walk.Brush, error) {
 	return walk.NullBrush(), nil
+}
+
+type WhiteBrush struct {
+}
+
+func (WhiteBrush) Create() (walk.Brush, error) {
+	return walk.WhiteBrush(), nil
 }
 
 type SolidColorBrush struct {
