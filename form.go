@@ -725,6 +725,7 @@ func (fb *FormBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) u
 				p.SaveState()
 			}
 			fb.started = false
+			fb.Dispose()
 		}
 		return 0
 
