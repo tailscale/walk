@@ -191,7 +191,7 @@ func (dlg *Dialog) Show() {
 
 	dlg.FormBase.Show()
 
-	dlg.startLayout()
+	dlg.startLayout(nil)
 }
 
 // fitRectToScreen fits rectangle to screen. Input and output rectangles are in native pixels.
