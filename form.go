@@ -75,8 +75,8 @@ type FormBase struct {
 	clientComposite             *Composite
 	owner                       Form
 	stopwatch                   *stopwatch
-	performLayout               chan ContainerLayoutItem
-	layoutResults               chan []LayoutResult
+	performLayout               chan layoutStartInfo
+	layoutResults               chan layoutResultsWithCompletionFuncs
 	inSizeLoop                  chan bool
 	updateStopwatch             chan *stopwatch
 	quitLayoutPerformer         chan struct{}
@@ -96,6 +96,7 @@ type FormBase struct {
 	isInRestoreState            bool
 	started                     bool
 	layoutScheduled             bool
+	layoutCompletionFuncs       []func() // used for scheduled layouts only
 }
 
 func (fb *FormBase) init(form Form) error {
@@ -171,7 +172,7 @@ func (fb *FormBase) start() {
 	if fb.proposedSize == (Size{}) {
 		fb.proposedSize = maxSize(SizeFrom96DPI(fb.minSize96dpi, fb.DPI()), fb.SizePixels())
 		if !fb.Suspended() {
-			fb.startLayout()
+			fb.startLayout(nil)
 		}
 	}
 
@@ -665,7 +666,7 @@ func (fb *FormBase) setStopwatch(sw *stopwatch) {
 	fb.updateStopwatch <- sw
 }
 
-func (fb *FormBase) startLayout() bool {
+func (fb *FormBase) startLayout(completionFuncs []func()) bool {
 	if fb.performLayout == nil || fb.inSizingLoop && !fb.startingLayoutViaSizingLoop {
 		return false
 	}
@@ -687,7 +688,7 @@ func (fb *FormBase) startLayout() bool {
 	cli := CreateLayoutItemsForContainer(fb)
 	cli.Geometry().ClientSize = cs
 
-	fb.performLayout <- cli
+	fb.performLayout <- layoutStartInfo{item: cli, completionFuncs: completionFuncs}
 
 	return true
 }
@@ -774,7 +775,7 @@ func (fb *FormBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) u
 		wp := (*win.WINDOWPOS)(unsafe.Pointer(lParam))
 
 		if wp.Flags&win.SWP_SHOWWINDOW != 0 {
-			fb.startLayout()
+			fb.startLayout(nil)
 		}
 
 		if wp.Flags&win.SWP_NOSIZE != 0 || fb.Layout() == nil || fb.Suspended() {
@@ -793,11 +794,12 @@ func (fb *FormBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) u
 			}
 		}
 
-		if fb.startLayout() {
+		if fb.startLayout(nil) {
 			if fb.inSizingLoop {
 				fb.startingLayoutViaSizingLoop = false
 
-				applyLayoutResults(<-fb.layoutResults, fb.stopwatch)
+				results := <-fb.layoutResults
+				applyLayoutResults(results.results, fb.stopwatch)
 
 				if fb.stopwatch != nil {
 					fb.stopwatch.Stop(performingLayoutSubject)
@@ -873,7 +875,9 @@ func (fb *FormBase) OnPostDispatch() {
 	}
 
 	fb.layoutScheduled = false
-	fb.startLayout()
+	completionFuncs := fb.layoutCompletionFuncs
+	fb.layoutCompletionFuncs = nil
+	fb.startLayout(completionFuncs)
 }
 
 func (fb *FormBase) Window() Window {

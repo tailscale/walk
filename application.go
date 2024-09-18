@@ -762,7 +762,14 @@ func (app *Application) runSyncLayout() {
 	app.syncLayoutMutex.Unlock()
 
 	for _, lr := range layoutResults {
-		applyLayoutResults(lr.results, lr.stopwatch)
+		applyLayoutResults(lr.results.results, lr.stopwatch)
+	}
+
+	// Don't run completion functions until all layout results have been processed.
+	for _, lr := range layoutResults {
+		for _, fn := range lr.results.completionFuncs {
+			fn()
+		}
 	}
 }
 

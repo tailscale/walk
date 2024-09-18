@@ -209,6 +209,19 @@ type Window interface {
 	// RequestLayout either schedules or immediately starts performing layout.
 	RequestLayout()
 
+	// RequestLayoutWithCompletionFunc either schedules or immediately starts
+	// performing layout, and invokes completionFunc on the UI goroutine once the
+	// layout operation has finished.
+	RequestLayoutWithCompletionFunc(completionFunc func())
+
+	// RequestImmediateLayout immediately starts performing layout.
+	RequestImmediateLayout()
+
+	// RequestImmediateLayoutWithCompletionFunc immediately starts performing
+	// layout and invokes completionFunc on the UI goroutine once the layout
+	// operation has finished.
+	RequestImmediateLayoutWithCompletionFunc(completionFunc func())
+
 	// RightToLeftReading returns whether the reading order of the Window
 	// is from right to left.
 	RightToLeftReading() bool
@@ -1984,6 +1997,29 @@ func (wb *WindowBase) SetClientSizePixels(value Size) error {
 
 // RequestLayout either schedules or immediately starts performing layout.
 func (wb *WindowBase) RequestLayout() {
+	wb.requestLayout(false, nil)
+}
+
+// RequestLayoutWithCompletionFunc either schedules or immediately starts
+// performing layout, and invokes completionFunc on the UI goroutine once the
+// layout operation has finished.
+func (wb *WindowBase) RequestLayoutWithCompletionFunc(completionFunc func()) {
+	wb.requestLayout(false, completionFunc)
+}
+
+// RequestImmediateLayout immediately starts performing layout.
+func (wb *WindowBase) RequestImmediateLayout() {
+	wb.requestLayout(true, nil)
+}
+
+// RequestImmediateLayoutWithCompletionFunc immediately starts performing
+// layout and invokes completionFunc on the UI goroutine once the layout
+// operation has finished.
+func (wb *WindowBase) RequestImmediateLayoutWithCompletionFunc(completionFunc func()) {
+	wb.requestLayout(true, completionFunc)
+}
+
+func (wb *WindowBase) requestLayout(immediate bool, completionFunc func()) {
 	var form Form
 
 	hwnd := wb.hWnd
@@ -2024,10 +2060,14 @@ func (wb *WindowBase) RequestLayout() {
 		return
 	}
 
-	if fb := form.AsFormBase(); activeForm != fb {
-		fb.startLayout()
+	if fb := form.AsFormBase(); activeForm != fb || immediate {
+		completionFuncs := append(fb.layoutCompletionFuncs, completionFunc)
+		fb.layoutCompletionFuncs = nil
+		fb.layoutScheduled = false
+		fb.startLayout(completionFuncs)
 	} else {
 		fb.layoutScheduled = true
+		fb.layoutCompletionFuncs = append(fb.layoutCompletionFuncs, completionFunc)
 	}
 }
 

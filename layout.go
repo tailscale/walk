@@ -100,9 +100,14 @@ func CreateLayoutItemsForContainerWithContext(container Container, ctx *LayoutCo
 	return containerItem
 }
 
-func startLayoutPerformer(form Form) (performLayout chan ContainerLayoutItem, layoutResults chan []LayoutResult, inSizeLoop chan bool, updateStopwatch chan *stopwatch, quit chan struct{}) {
-	performLayout = make(chan ContainerLayoutItem)
-	layoutResults = make(chan []LayoutResult)
+type layoutStartInfo struct {
+	item            ContainerLayoutItem
+	completionFuncs []func()
+}
+
+func startLayoutPerformer(form Form) (performLayout chan layoutStartInfo, layoutResults chan layoutResultsWithCompletionFuncs, inSizeLoop chan bool, updateStopwatch chan *stopwatch, quit chan struct{}) {
+	performLayout = make(chan layoutStartInfo)
+	layoutResults = make(chan layoutResultsWithCompletionFuncs)
 	inSizeLoop = make(chan bool)
 	updateStopwatch = make(chan *stopwatch)
 	quit = make(chan struct{})
@@ -113,11 +118,11 @@ func startLayoutPerformer(form Form) (performLayout chan ContainerLayoutItem, la
 		sizing := false
 		busy := false
 		var cancel chan struct{}
-		done := make(chan []LayoutResult)
+		done := make(chan layoutResultsWithCompletionFuncs)
 
 		for {
 			select {
-			case root := <-performLayout:
+			case startInfo := <-performLayout:
 				if busy {
 					close(cancel)
 				}
@@ -125,7 +130,7 @@ func startLayoutPerformer(form Form) (performLayout chan ContainerLayoutItem, la
 				busy = true
 				cancel = make(chan struct{})
 
-				go layoutTree(root, root.Geometry().ClientSize, cancel, done, stopwatch)
+				go layoutTree(startInfo, startInfo.item.Geometry().ClientSize, cancel, done, stopwatch)
 
 			case results := <-done:
 				busy = false
@@ -137,7 +142,11 @@ func startLayoutPerformer(form Form) (performLayout chan ContainerLayoutItem, la
 				if sizing {
 					layoutResults <- results
 				} else {
-					App().synchronizeLayout(&formLayoutResult{form, stopwatch, results})
+					App().synchronizeLayout(&formLayoutResult{
+						form:      form,
+						stopwatch: stopwatch,
+						results:   results,
+					})
 				}
 
 			case sizing = <-inSizeLoop:
@@ -163,8 +172,9 @@ func startLayoutPerformer(form Form) (performLayout chan ContainerLayoutItem, la
 }
 
 // layoutTree lays out tree. size parameter is in native pixels.
-func layoutTree(root ContainerLayoutItem, size Size, cancel chan struct{}, done chan []LayoutResult, stopwatch *stopwatch) {
+func layoutTree(startInfo layoutStartInfo, size Size, cancel chan struct{}, done chan layoutResultsWithCompletionFuncs, stopwatch *stopwatch) {
 	const minSizeCacheSubject = "layoutTree - populating min size cache"
+	root := startInfo.item
 
 	if stopwatch != nil {
 		stopwatch.Start(minSizeCacheSubject)
@@ -274,7 +284,7 @@ func layoutTree(root ContainerLayoutItem, size Size, cancel chan struct{}, done 
 				stopwatch.Stop(layoutSubject)
 			}
 
-			done <- layoutResults
+			done <- layoutResultsWithCompletionFuncs{results: layoutResults, completionFuncs: startInfo.completionFuncs}
 			return
 
 		case <-cancel:
@@ -744,12 +754,17 @@ type Geometry struct {
 type formLayoutResult struct {
 	form      Form
 	stopwatch *stopwatch
-	results   []LayoutResult
+	results   layoutResultsWithCompletionFuncs
 }
 
 type LayoutResult struct {
 	container ContainerLayoutItem
 	items     []LayoutResultItem
+}
+
+type layoutResultsWithCompletionFuncs struct {
+	results         []LayoutResult
+	completionFuncs []func()
 }
 
 type LayoutResultItem struct {
