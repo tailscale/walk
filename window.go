@@ -2257,7 +2257,7 @@ func windowFromHandle(hwnd win.HWND) Window {
 }
 
 func defaultWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
-	defer appSingleton.maybePublishPanic()
+	defer appSingleton.HandlePanicFromNativeCallback()
 
 	var wi Window
 	if msg == win.WM_NCCREATE {
