@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -104,29 +105,31 @@ func (o *onceWithPreInit) doPreInit(f func()) bool {
 // of the application. There is only one singleton instance. Use InitApp to
 // initialize it, and then use App for the duration of the process to access it.
 type Application struct {
-	uiThreadID          uint32
-	ctx                 context.Context
-	ctxCancel           context.CancelFunc
-	walkInit            []func()
-	organizationName    atomic.Pointer[string]
-	productName         atomic.Pointer[string]
-	settings            atomic.Value // of Settings
-	exiting             atomic.Bool
-	panickingPublisher  ErrorEventPublisher
-	nextMsg             uint32
-	syncFuncMsg         uint32
-	syncLayoutMsg       uint32
-	cloakChangeMsg      uint32
-	winEventProc        uintptr
-	winEventHook        win.HWINEVENTHOOK
-	msgWindow           win.HWND
-	syncFuncsMutex      sync.Mutex
-	syncFuncs           []func()
-	syncLayoutMutex     sync.Mutex
-	layoutResultsByForm map[Form]*formLayoutResult // Layout computations queued for application
-	pToolTip            *ToolTip
-	activeMessageLoops  int
-	runMsgFilters       bool
+	uiThreadID                    uint32
+	ctx                           context.Context
+	ctxCancel                     context.CancelFunc
+	walkInit                      []func()
+	organizationName              atomic.Pointer[string]
+	productName                   atomic.Pointer[string]
+	settings                      atomic.Value // of Settings
+	exiting                       atomic.Bool
+	panickingPublisher            ErrorEventPublisher
+	nextMsg                       uint32
+	syncFuncMsg                   uint32
+	syncLayoutMsg                 uint32
+	cloakChangeMsg                uint32
+	winEventProc                  uintptr
+	winEventHook                  win.HWINEVENTHOOK
+	msgWindow                     win.HWND
+	syncFuncsMutex                sync.Mutex
+	syncFuncs                     []func()
+	syncLayoutMutex               sync.Mutex
+	layoutResultsByForm           map[Form]*formLayoutResult // Layout computations queued for application
+	pToolTip                      *ToolTip
+	globalPreTranslateHandlers    []PreTranslateHandler
+	perWindowPreTranslateHandlers map[win.HWND]PreTranslateHandler
+	activeMessageLoops            int
+	runMsgFilters                 bool
 }
 
 // Bare minimum initialization that must happen ASAP. While we typically do
@@ -254,8 +257,8 @@ func (app *Application) Panicking() *ErrorEvent {
 }
 
 // maybePublishPanic is used by walk's top-level WndProcs to recover any
-// panics that occurred further down the call stack, convert them to errors,
-// and publish them as an event.
+// panic that occurred further down the call stack, convert it to an error,
+// and publish it as an event.
 func (app *Application) maybePublishPanic() {
 	if len(app.panickingPublisher.event.handlers) == 0 {
 		return
@@ -353,6 +356,7 @@ func (app *Application) init() (finalInitOutsideOnce func() error, err error) {
 	}
 
 	app.layoutResultsByForm = make(map[Form]*formLayoutResult)
+	app.perWindowPreTranslateHandlers = make(map[win.HWND]PreTranslateHandler)
 	defaultWndProcPtr = windows.NewCallback(defaultWndProc)
 
 	walkInits := app.walkInit
@@ -429,6 +433,21 @@ func (app *Application) runMainMessageLoop() int {
 }
 
 func (app *Application) runPreTranslateHandler(msg *win.MSG) bool {
+	// Order is important here: run the global handlers first...
+	for _, handler := range app.globalPreTranslateHandlers {
+		if handler.OnPreTranslate(msg) {
+			return true
+		}
+	}
+
+	// ...Then the per-window handlers...
+	for _, handler := range app.perWindowPreTranslateHandlers {
+		if handler.OnPreTranslate(msg) {
+			return true
+		}
+	}
+
+	// ...Then, if present, the handler associated with msg's HWND.
 	w := getMsgWindow(msg)
 	if w == nil {
 		return false
@@ -790,4 +809,34 @@ func (app *Application) EnableMessageFilterHooks(enable bool) {
 // context.Background when needed. This method may be called from any goroutine.
 func (app *Application) Context() context.Context {
 	return app.ctx
+}
+
+// AddGlobalPreTranslateHandler registers handler to be unconditionally run at
+// each iteration of the main event loop. Once added, handler remains registered
+// for the remaining life of the process. This method must be called from the
+// main goroutine.
+func (app *Application) AddGlobalPreTranslateHandler(handler PreTranslateHandler) {
+	app.AssertUIThread()
+	if handler != nil {
+		app.globalPreTranslateHandlers = append(app.globalPreTranslateHandlers, handler)
+	}
+}
+
+// AddPreTranslateHandlerForHWND registers handler keyed by hwnd, to be run
+// at each iteration of the main event loop. This method must be called from
+// the main goroutine.
+func (app *Application) AddPreTranslateHandlerForHWND(hwnd win.HWND, handler PreTranslateHandler) {
+	app.AssertUIThread()
+	if hwnd == 0 || handler == nil {
+		panic(os.ErrInvalid)
+	}
+	app.perWindowPreTranslateHandlers[hwnd] = handler
+}
+
+// DeletePreTranslateHandlerForHWND removes any handler keyed by hwnd that
+// was previously registered by [Application.AddPreTranslateHandlerForHWND]. This method must
+// be called from the main goroutine.
+func (app *Application) DeletePreTranslateHandlerForHWND(hwnd win.HWND) {
+	app.AssertUIThread()
+	delete(app.perWindowPreTranslateHandlers, hwnd)
 }

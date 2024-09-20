@@ -91,6 +91,9 @@ type Widget interface {
 	ToolTipText() string
 
 	ancestor() Form
+
+	setCtrlID(ids ctrlIDAllocator)
+	clearCtrlID(ids ctrlIDAllocator)
 }
 
 type WidgetBase struct {
@@ -102,6 +105,7 @@ type WidgetBase struct {
 	graphicsEffects             *WidgetGraphicsEffectList
 	alignment                   Alignment2D
 	alwaysConsumeSpace          bool
+	usesPredefinedID            bool
 }
 
 // InitWidget initializes a Widget.
@@ -131,6 +135,10 @@ func InitWidget(widget Widget, parent Window, className string, style, exStyle u
 }
 
 func (wb *WidgetBase) init(widget Widget) error {
+	if wb.parent != nil {
+		wb.assignCtrlIDs()
+	}
+
 	wb.graphicsEffects = newWidgetGraphicsEffectList(wb)
 
 	tt := App().toolTip()
@@ -309,6 +317,8 @@ func (wb *WidgetBase) SetParent(parent Container) (err error) {
 	if parent == nil {
 		wb.SetVisible(false)
 
+		wb.revokeCtrlIDs()
+
 		style &^= win.WS_CHILD
 		style |= win.WS_POPUP
 
@@ -320,33 +330,32 @@ func (wb *WidgetBase) SetParent(parent Container) (err error) {
 			return lastError("SetWindowLong")
 		}
 	} else {
-		style |= win.WS_CHILD
-		style &^= win.WS_POPUP
+		if wb.parent == nil {
+			// We don't currently have a parent, so we need to convert from a popup
+			// window to a child window in order to properly work with one.
+			style |= win.WS_CHILD
+			style &^= win.WS_POPUP
 
-		win.SetLastError(0)
-		if win.SetWindowLong(wb.hWnd, win.GWL_STYLE, int32(style)) == 0 {
-			return lastError("SetWindowLong")
+			win.SetLastError(0)
+			if win.SetWindowLong(wb.hWnd, win.GWL_STYLE, int32(style)) == 0 {
+				return lastError("SetWindowLong")
+			}
+		} else {
+			// Revoke our control IDs from the old parent.
+			wb.revokeCtrlIDs()
 		}
+
 		if win.SetParent(wb.hWnd, parent.Handle()) == 0 {
 			return lastError("SetParent")
 		}
 
-		if cb := parent.AsContainerBase(); cb != nil {
-			win.SetWindowLong(wb.hWnd, win.GWL_ID, cb.NextChildID())
-		}
+		// Assign new control IDs from the new parent.
+		wb.assignCtrlIDs()
 	}
 
-	b := wb.BoundsPixels()
-
-	if !win.SetWindowPos(
-		wb.hWnd,
-		win.HWND_BOTTOM,
-		int32(b.X),
-		int32(b.Y),
-		int32(b.Width),
-		int32(b.Height),
-		win.SWP_FRAMECHANGED) {
-
+	// After changing window style, call SetWindowPos with SWP_FRAMECHANGED to repaint the window frame.
+	const swpFlags = win.SWP_FRAMECHANGED | win.SWP_NOACTIVATE | win.SWP_NOZORDER | win.SWP_NOMOVE | win.SWP_NOSIZE
+	if !win.SetWindowPos(wb.hWnd, 0, 0, 0, 0, 0, swpFlags) {
 		return lastError("SetWindowPos")
 	}
 
@@ -377,6 +386,16 @@ func (wb *WidgetBase) SetParent(parent Container) (err error) {
 	}
 
 	return nil
+}
+
+func (wb *WidgetBase) assignCtrlIDs() {
+	form := wb.ancestor()
+	form.AsFormBase().assignCtrlIDs(wb)
+}
+
+func (wb *WidgetBase) revokeCtrlIDs() {
+	form := wb.ancestor()
+	form.AsFormBase().revokeCtrlIDs(wb)
 }
 
 func (wb *WidgetBase) ForEachAncestor(f func(window Window) bool) {
@@ -498,18 +517,11 @@ func (wb *WidgetBase) hasComplexBackground() bool {
 	return complex
 }
 
-func ancestor(w Widget) Form {
+func ancestor(w Window) Form {
 	if w == nil {
 		return nil
 	}
 	return w.ancestor()
-}
-
-func (wb *WidgetBase) ancestor() Form {
-	hWndRoot := win.GetAncestor(wb.Handle(), win.GA_ROOT)
-
-	rw, _ := windowFromHandle(hWndRoot).(Form)
-	return rw
 }
 
 func (wb *WidgetBase) LayoutFlags() LayoutFlags {
@@ -537,4 +549,32 @@ func (wb *WidgetBase) OnPostDispatch() {
 	if f, ok := wb.ancestor().(PostDispatchHandler); ok {
 		f.OnPostDispatch()
 	}
+}
+
+func (wb *WidgetBase) getCtrlID() uint16 {
+	return uint16(win.GetWindowLong(wb.hWnd, win.GWL_ID))
+}
+
+func (wb *WidgetBase) setCtrlID(ids ctrlIDAllocator) {
+	if !wb.usesPredefinedID {
+		wb.setCtrlIDInternal(ids.allocCtrlID())
+	}
+}
+
+func (wb *WidgetBase) clearCtrlID(ids ctrlIDAllocator) {
+	if !wb.usesPredefinedID {
+		ids.freeCtrlID(wb.setCtrlIDInternal(0))
+	}
+}
+
+func (wb *WidgetBase) setCtrlIDInternal(id uint16) (prevID uint16) {
+	return uint16(win.SetWindowLong(wb.hWnd, win.GWL_ID, int32(id)))
+}
+
+func (wb *WidgetBase) setPredefinedID(id uint16) {
+	if id == 0 || id > maxPredefinedCtrlID {
+		panic("not a predefined control ID")
+	}
+	wb.usesPredefinedID = true
+	wb.setCtrlIDInternal(id)
 }

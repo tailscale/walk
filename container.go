@@ -27,11 +27,10 @@ type Container interface {
 
 type ContainerBase struct {
 	WidgetBase
-	layout      Layout
-	children    *WidgetList
-	dataBinder  *DataBinder
-	nextChildID int32
-	persistent  bool
+	layout     Layout
+	children   *WidgetList
+	dataBinder *DataBinder
+	persistent bool
 }
 
 func (cb *ContainerBase) AsWidgetBase() *WidgetBase {
@@ -40,11 +39,6 @@ func (cb *ContainerBase) AsWidgetBase() *WidgetBase {
 
 func (cb *ContainerBase) AsContainerBase() *ContainerBase {
 	return cb
-}
-
-func (cb *ContainerBase) NextChildID() int32 {
-	cb.nextChildID++
-	return cb.nextChildID
 }
 
 func (cb *ContainerBase) applyEnabled(enabled bool) {
@@ -301,6 +295,11 @@ func (cb *ContainerBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintp
 		return 0
 
 	case win.WM_COMMAND:
+		if dlgExResolver, ok := ancestor(cb).(DialogExResolver); ok {
+			// Let the DialogEx handle this.
+			dlgExResolver.AsDialogEx().SendMessage(win.WM_COMMAND, wParam, lParam)
+			return 0
+		}
 		if lParam == 0 {
 			switch win.HIWORD(uint32(wParam)) {
 			case 0:

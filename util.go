@@ -317,11 +317,11 @@ func applyDPIToDescendants(window Window, dpi int) {
 	})
 }
 
-func walkDescendants(window Window, f func(w Window) bool) {
+func walkDescendants(window Window, f func(w Window) bool) bool {
 	window = window.AsWindowBase().window
 
 	if window == nil || !f(window) {
-		return
+		return false
 	}
 
 	var children []*WidgetBase
@@ -346,8 +346,12 @@ func walkDescendants(window Window, f func(w Window) bool) {
 	}
 
 	for _, wb := range children {
-		walkDescendants(wb.window.(Widget), f)
+		if !walkDescendants(wb.window.(Widget), f) {
+			return false
+		}
 	}
+
+	return true
 }
 
 func less(a, b interface{}, order SortOrder) bool {

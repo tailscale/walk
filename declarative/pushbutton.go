@@ -58,16 +58,22 @@ type PushButton struct {
 	// PushButton
 
 	AssignTo       **walk.PushButton
+	PredefinedID   int
 	ImageAboveText bool
+	Default        bool
 }
 
 func (pb PushButton) Create(builder *Builder) (err error) {
-	var w *walk.PushButton
-	if pb.UseLayoutFlags {
-		w, err = walk.NewPushButtonWithLayoutFlags(builder.Parent(), pb.LayoutFlags)
-	} else {
-		w, err = walk.NewPushButton(builder.Parent())
+	opts := walk.PushButtonOptions{
+		LayoutFlags:  pb.LayoutFlags,
+		Default:      pb.Default,
+		PredefinedID: pb.PredefinedID,
 	}
+	if !pb.UseLayoutFlags {
+		opts.LayoutFlags = walk.GrowableHorz
+	}
+
+	w, err := walk.NewPushButtonWithOptions(builder.Parent(), opts)
 	if err != nil {
 		return err
 	}

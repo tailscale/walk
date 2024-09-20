@@ -8,6 +8,8 @@
 package walk
 
 import (
+	"fmt"
+
 	"github.com/tailscale/win"
 )
 
@@ -20,26 +22,49 @@ type PushButton struct {
 // NewPushButton creates a new PushButton as a child of parent with its
 // LayoutFlags set to GrowableHorz.
 func NewPushButton(parent Container) (*PushButton, error) {
-	return NewPushButtonWithLayoutFlags(parent, GrowableHorz)
+	return NewPushButtonWithOptions(parent, PushButtonOptions{LayoutFlags: GrowableHorz})
 }
 
-// NewPushButtonWithLayoutFlags creates a new PushButton as a child of parent
-// with its LayoutFlags set to layoutFlags.
-func NewPushButtonWithLayoutFlags(parent Container, layoutFlags LayoutFlags) (*PushButton, error) {
+// PushButtonOptions provides the optional fields that are passed into
+// [NewPushButtonWithOptions].
+type PushButtonOptions struct {
+	LayoutFlags  LayoutFlags // LayoutFlags to be used by the PushButton.
+	PredefinedID int         // When non-zero, must be one of the predefined control IDs <= [win.IDCONTINUE].
+	Default      bool        // When true, the PushButton will be initially created as a default PushButton.
+}
+
+// NewPushButtonWithOptions creates a new PushButton as a child of parent
+// using options.
+func NewPushButtonWithOptions(parent Container, opts PushButtonOptions) (*PushButton, error) {
+	if opts.PredefinedID > maxPredefinedCtrlID {
+		return nil, fmt.Errorf("Requested ID must be <= IDCONTINUE")
+	}
+
 	pb := &PushButton{
-		layoutFlags: layoutFlags,
+		layoutFlags: opts.LayoutFlags,
+	}
+
+	style := uint32(win.WS_TABSTOP | win.WS_VISIBLE)
+	if opts.Default {
+		style |= win.BS_DEFPUSHBUTTON
+	} else {
+		style |= win.BS_PUSHBUTTON
 	}
 
 	if err := InitWidget(
 		pb,
 		parent,
 		"BUTTON",
-		win.WS_TABSTOP|win.WS_VISIBLE|win.BS_PUSHBUTTON,
+		style,
 		0); err != nil {
 		return nil, err
 	}
 
 	pb.Button.init()
+
+	if opts.PredefinedID > 0 {
+		pb.setPredefinedID(uint16(opts.PredefinedID))
+	}
 
 	pb.GraphicsEffects().Add(InteractionEffect)
 	pb.GraphicsEffects().Add(FocusEffect)
@@ -96,35 +121,41 @@ func (pb *PushButton) ensureProperDialogDefaultButton(hwndFocus win.HWND) {
 }
 
 func (pb *PushButton) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
-	switch msg {
-	case win.WM_GETDLGCODE:
-		hwndFocus := win.GetFocus()
-		if hwndFocus == pb.hWnd {
-			form := ancestor(pb)
-			if form == nil {
+	if _, isDialogEx := pb.ancestor().(DialogExResolver); !isDialogEx {
+		switch msg {
+		case win.WM_GETDLGCODE:
+			hwndFocus := win.GetFocus()
+			if hwndFocus == pb.hWnd {
+				form := ancestor(pb)
+				if form == nil {
+					break
+				}
+
+				dlg, ok := form.(dialogish)
+				if !ok {
+					break
+				}
+
+				defBtn := dlg.DefaultButton()
+				if defBtn == pb {
+					pb.setAndClearStyleBits(win.BS_DEFPUSHBUTTON, win.BS_PUSHBUTTON)
+					if pb.origWndProcPtr == 0 {
+						return win.DLGC_BUTTON | win.DLGC_DEFPUSHBUTTON
+					}
+					return win.CallWindowProc(pb.origWndProcPtr, hwnd, msg, wParam, lParam)
+				}
+
 				break
 			}
 
-			dlg, ok := form.(dialogish)
-			if !ok {
-				break
-			}
+			pb.ensureProperDialogDefaultButton(hwndFocus)
 
-			defBtn := dlg.DefaultButton()
-			if defBtn == pb {
-				pb.setAndClearStyleBits(win.BS_DEFPUSHBUTTON, win.BS_PUSHBUTTON)
-				return win.DLGC_BUTTON | win.DLGC_DEFPUSHBUTTON
-			}
-
-			break
+		case win.WM_KILLFOCUS:
+			pb.ensureProperDialogDefaultButton(win.HWND(wParam))
 		}
+	}
 
-		pb.ensureProperDialogDefaultButton(hwndFocus)
-
-	case win.WM_KILLFOCUS:
-		pb.ensureProperDialogDefaultButton(win.HWND(wParam))
-
-	case win.WM_THEMECHANGED:
+	if msg == win.WM_THEMECHANGED {
 		pb.contentMargins = win.MARGINS{}
 	}
 
