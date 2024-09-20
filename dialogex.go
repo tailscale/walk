@@ -156,7 +156,7 @@ func createEmptyDialog(dlg *DialogEx, parent Form, title string, param uintptr) 
 }
 
 func dialogExProc(hdlg win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
-	defer appSingleton.maybePublishPanic()
+	defer appSingleton.HandlePanicFromNativeCallback()
 
 	var dlgEx *DialogEx
 	if msg == win.WM_INITDIALOG {
