@@ -10,10 +10,10 @@ package walk
 import (
 	"fmt"
 	"math"
-	"sync"
 	"syscall"
 	"unsafe"
 
+	"github.com/tailscale/walk/idalloc"
 	"github.com/tailscale/win"
 )
 
@@ -25,11 +25,6 @@ const (
 )
 
 var (
-	syncFuncs struct {
-		m     sync.Mutex
-		funcs []func()
-	}
-
 	taskbarButtonCreatedMsgId uint32
 
 	activeForm *FormBase
@@ -68,6 +63,9 @@ type Form interface {
 	// SetRightToLeftLayout sets whether coordinates on the x axis of the
 	// Form increase from right to left.
 	SetRightToLeftLayout(rtl bool) error
+
+	// SetFocusToWindow sets keyboard focus to the Window specified by w.
+	SetFocusToWindow(w Window)
 }
 
 type FormBase struct {
@@ -97,9 +95,59 @@ type FormBase struct {
 	started                     bool
 	layoutScheduled             bool
 	layoutCompletionFuncs       []func() // used for scheduled layouts only
+	ctrlIDs                     idalloc.IDAllocator
+}
+
+const maxPredefinedCtrlID = win.IDCONTINUE
+
+func makeControlIDAllocator() idalloc.IDAllocator {
+	alloc := idalloc.New(1 << 16)
+	for i := 0; i <= maxPredefinedCtrlID; i++ {
+		alloc.Allocate()
+	}
+	return alloc
+}
+
+type ctrlIDAllocator interface {
+	allocCtrlID() uint16
+	freeCtrlID(id uint16)
+}
+
+func (fb *FormBase) allocCtrlID() uint16 {
+	id, err := fb.ctrlIDs.Allocate()
+	if err != nil {
+		panic(err)
+	}
+	return uint16(id)
+}
+
+func (fb *FormBase) freeCtrlID(id uint16) {
+	if id > maxPredefinedCtrlID {
+		fb.ctrlIDs.Free(uint32(id))
+	}
+}
+
+func (fb *FormBase) assignCtrlIDs(child *WidgetBase) {
+	walkDescendants(child, func(w Window) bool {
+		if wgt, ok := w.(Widget); ok {
+			wgt.setCtrlID(fb)
+		}
+		return true
+	})
+}
+
+func (fb *FormBase) revokeCtrlIDs(child *WidgetBase) {
+	walkDescendants(child, func(w Window) bool {
+		if wgt, ok := w.(Widget); ok {
+			wgt.clearCtrlID(fb)
+		}
+		return true
+	})
 }
 
 func (fb *FormBase) init(form Form) error {
+	fb.ctrlIDs = makeControlIDAllocator()
+
 	var err error
 	if fb.clientComposite, err = NewComposite(form); err != nil {
 		return err
@@ -882,4 +930,10 @@ func (fb *FormBase) OnPostDispatch() {
 
 func (fb *FormBase) Window() Window {
 	return fb.window
+}
+
+func (fb *FormBase) SetFocusToWindow(w Window) {
+	if w != nil {
+		win.SetFocus(w.Handle())
+	}
 }

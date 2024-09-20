@@ -900,7 +900,7 @@ func (td *taskDialog) getIcon(img Image, sys TaskDialogSystemIcon) uintptr {
 
 func (td *taskDialog) getDPI() int {
 	if td.hwnd != 0 {
-		wb := WindowBase{hWnd: td.hwnd}
+		wb := Win32WindowImpl{hWnd: td.hwnd}
 		return wb.DPI()
 	}
 	if td.opts != nil && td.opts.Owner != nil {

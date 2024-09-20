@@ -23,8 +23,10 @@ var (
 	ErrWindowClassNotRegistered = errors.New("window class not registered with walk")
 )
 
-// Window is an interface that provides operations common to all windows.
+// Window is an interface that provides operations common to all non-trivial windows.
 type Window interface {
+	Win32Window
+
 	// AddDisposable adds a Disposable resource that should be disposed of
 	// together with this Window.
 	AddDisposable(d Disposable)
@@ -111,9 +113,6 @@ type Window interface {
 	// drawing is enabled, which may help reduce flicker.
 	DoubleBuffering() bool
 
-	// DPI returns the current DPI value of the Window.
-	DPI() int
-
 	// Enabled returns if the Window is enabled for user interaction.
 	Enabled() bool
 
@@ -131,9 +130,6 @@ type Window interface {
 
 	// Form returns the Form of the Window.
 	Form() Form
-
-	// Handle returns the window handle of the Window.
-	Handle() win.HWND
 
 	// Height returns the outer height of the Window, including decorations.
 	Height() int
@@ -374,9 +370,6 @@ type Window interface {
 	// constants in the win package.
 	ThemeForClass(themeClass string) (*Theme, error)
 
-	// Visible returns if the Window is visible.
-	Visible() bool
-
 	// VisibleChanged returns an Event that you can attach to for handling
 	// visible changed events for the Window.
 	VisibleChanged() *Event
@@ -412,6 +405,8 @@ type Window interface {
 	// RootWidgets like *MainWindow or *Dialog and relative to the parent for
 	// child Windows.
 	YPixels() int
+
+	ancestor() Form
 }
 
 type calcTextSizeInfo struct {
@@ -421,12 +416,12 @@ type calcTextSizeInfo struct {
 	dpi   int
 }
 
-// WindowBase implements many operations common to all Windows.
+// WindowBase implements many operations common to all non-trivial Windows.
 type WindowBase struct {
+	Win32WindowImpl
 	nopActionListObserver
 	window                      Window
 	form                        Form
-	hWnd                        win.HWND
 	origWndProcPtr              uintptr
 	wndClassInfo                *wndClassInfo
 	name                        string
@@ -490,7 +485,10 @@ func (ci *wndClassInfo) allocMessage() (uint32, error) {
 }
 
 func newWndClassInfo() *wndClassInfo {
-	return &wndClassInfo{nextMsg: win.WM_USER}
+	// We set nextMsg to WM_USER+3 to account for DM_GETDEFID, DM_SETDEFID,
+	// and DM_REPOSITION, which are already defined by the system for dialogs
+	// (and may be employed by IsDialogMessage).
+	return &wndClassInfo{nextMsg: win.WM_USER + 3}
 }
 
 func init() {
@@ -620,15 +618,11 @@ func initWindowWithCfg(cfg *windowCfg) error {
 	wb.themes = make(map[string]*Theme)
 
 	var hwndParent win.HWND
-	var hMenu win.HMENU
 	if cfg.Parent != nil {
 		hwndParent = cfg.Parent.Handle()
 
 		if widget, ok := cfg.Window.(Widget); ok {
 			if container, ok := cfg.Parent.(Container); ok {
-				if cb := container.AsContainerBase(); cb != nil {
-					hMenu = win.HMENU(cb.NextChildID())
-				}
 				widget.AsWidgetBase().parent = container
 			}
 		}
@@ -681,7 +675,7 @@ func initWindowWithCfg(cfg *windowCfg) error {
 		w,
 		h,
 		hwndParent,
-		hMenu,
+		0,
 		0,
 		unsafe.Pointer(createCtx),
 	)
@@ -710,9 +704,14 @@ func initWindowWithCfg(cfg *windowCfg) error {
 	return nil
 }
 
-func (wb *WindowBase) attachHWND(hwnd win.HWND, cfg *windowCfg) error {
+func (wb *WindowBase) mapHWND(hwnd win.HWND) {
 	wb.hWnd = hwnd
 	hwnd2WindowBase[hwnd] = wb
+}
+
+func (wb *WindowBase) attachHWND(hwnd win.HWND, cfg *windowCfg) error {
+	wb.mapHWND(hwnd)
+	wb.defWindowProc = win.DefWindowProc
 
 	if registeredWindowClasses[cfg.ClassName] == nil {
 		// We subclass all windows of system classes.
@@ -881,11 +880,6 @@ func (wb *WindowBase) Accessibility() *Accessibility {
 		wb.acc = &Accessibility{wb: wb}
 	}
 	return wb.acc
-}
-
-// Handle returns the window handle of the Window.
-func (wb *WindowBase) Handle() win.HWND {
-	return wb.hWnd
 }
 
 // SendMessage sends a message to the window and returns the result.
@@ -1123,11 +1117,6 @@ type ApplySysColorser interface {
 
 func (wb *WindowBase) ApplySysColors() {
 	wb.Invalidate()
-}
-
-// DPI returns the current DPI value of the WindowBase.
-func (wb *WindowBase) DPI() int {
-	return int(win.GetDpiForWindow(wb.hWnd))
 }
 
 type ApplyDPIer interface {
@@ -1458,11 +1447,6 @@ func (wb *WindowBase) forEachDescendantRaw(lParam uintptr, f func(hwnd win.HWND,
 	win.EnumChildWindows(wb.hWnd, forEachDescendantRawCallbackPtr, lParam)
 }
 
-// Visible returns if the *WindowBase is visible.
-func (wb *WindowBase) Visible() bool {
-	return win.IsWindowVisible(wb.hWnd)
-}
-
 // SetVisible sets if the *WindowBase is visible.
 func (wb *WindowBase) SetVisible(visible bool) {
 	if wb.Visible() != visible {
@@ -1527,21 +1511,6 @@ func (wb *WindowBase) Bounds() Rectangle {
 // coordinates, for a child Window the coordinates are relative to its parent.
 func (wb *WindowBase) SetBounds(bounds Rectangle) error {
 	return wb.SetBoundsPixels(wb.RectangleFrom96DPI(bounds))
-}
-
-// BoundsPixels returns the outer bounding box rectangle of the *WindowBase, including
-// decorations.
-//
-// The coordinates are relative to the screen.
-func (wb *WindowBase) BoundsPixels() Rectangle {
-	var r win.RECT
-
-	if !win.GetWindowRect(wb.hWnd, &r) {
-		lastError("GetWindowRect")
-		return Rectangle{}
-	}
-
-	return rectangleFromRECT(r)
 }
 
 // SetBoundsPixels sets the outer bounding box rectangle of the *WindowBase,
@@ -1954,12 +1923,6 @@ func (wb *WindowBase) ClientBounds() Rectangle {
 	return wb.RectangleTo96DPI(wb.ClientBoundsPixels())
 }
 
-// ClientBoundsPixels returns the inner bounding box rectangle of the *WindowBase,
-// excluding decorations.
-func (wb *WindowBase) ClientBoundsPixels() Rectangle {
-	return windowClientBounds(wb.hWnd)
-}
-
 // sizeFromClientSizePixels calculates size from client size in native pixels.
 func (wb *WindowBase) sizeFromClientSizePixels(clientSize Size) Size {
 	window := wb.window
@@ -2101,8 +2064,19 @@ func (wb *WindowBase) Focused() bool {
 	return wb.hWnd == win.GetFocus()
 }
 
+func (wb *WindowBase) ancestor() Form {
+	hWndRoot := win.GetAncestor(wb.Handle(), win.GA_ROOT)
+	rw, _ := windowFromHandle(hWndRoot).(Form)
+	return rw
+}
+
 // SetFocus sets the keyboard input focus to the *WindowBase.
 func (wb *WindowBase) SetFocus() error {
+	if frm := wb.ancestor(); frm != nil {
+		frm.SetFocusToWindow(wb.window)
+		return nil
+	}
+
 	if win.SetFocus(wb.hWnd) == 0 {
 		return lastError("SetFocus")
 	}
@@ -2741,5 +2715,5 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 		}
 	}
 
-	return win.DefWindowProc(hwnd, msg, wParam, lParam)
+	return wb.defWindowProc(hwnd, msg, wParam, lParam)
 }

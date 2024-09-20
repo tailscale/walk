@@ -61,11 +61,11 @@ type Action struct {
 
 // aaron: I don't know why Walk uses menu item IDs for IDOK and IDCANCEL, but
 // for now we need to reserve IDs up to and including IDCANCEL (2).
-const maxReservedID = win.IDCANCEL
+const maxReservedActionID = win.IDCANCEL
 
 func makeIDAllocator() idalloc.IDAllocator {
 	alloc := idalloc.New(1 << 16)
-	for i := 0; i <= maxReservedID; i++ {
+	for i := 0; i <= maxReservedActionID; i++ {
 		alloc.Allocate()
 	}
 	return alloc
@@ -80,7 +80,7 @@ func allocActionID() uint16 {
 }
 
 func freeActionID(id uint16) {
-	if id <= maxReservedID {
+	if id <= maxReservedActionID {
 		return
 	}
 	actionIDs.Free(uint32(id))
@@ -137,7 +137,7 @@ func (a *Action) finalize() {
 
 func (a *Action) addRef() {
 	a.refCount++
-	if a.refCount == 1 && a.id > maxReservedID {
+	if a.refCount == 1 && a.id > maxReservedActionID {
 		actionsById[a.id] = a
 		if sc := a.shortcut; sc.Key != 0 {
 			shortcut2Action[sc] = a
@@ -147,7 +147,7 @@ func (a *Action) addRef() {
 
 func (a *Action) release() {
 	a.refCount--
-	if a.refCount == 0 && a.id > maxReservedID {
+	if a.refCount == 0 && a.id > maxReservedActionID {
 		delete(actionsById, a.id)
 		if sc := a.shortcut; sc.Key != 0 && shortcut2Action[sc] == a {
 			delete(shortcut2Action, sc)
