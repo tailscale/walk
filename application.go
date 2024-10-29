@@ -66,7 +66,7 @@ type onceWithPreInit struct {
 	mu   sync.Mutex
 }
 
-// Init runs f with idential semantics to its sync.Once counterpart.
+// Init runs f with identical semantics to its sync.Once counterpart.
 func (o *onceWithPreInit) Init(f func()) {
 	if atomic.LoadUint32(&o.init) == 0 {
 		o.initSlow(f)
@@ -113,7 +113,6 @@ type Application struct {
 	productName                   atomic.Pointer[string]
 	settings                      atomic.Value // of Settings
 	exiting                       atomic.Bool
-	panickingPublisher            ErrorEventPublisher
 	nextMsg                       uint32
 	syncFuncMsg                   uint32
 	syncLayoutMsg                 uint32
@@ -249,31 +248,16 @@ func (app *Application) Exit(exitCode int) {
 	postQuitMsg()
 }
 
-// Panicking returns the ErrorEvent that will be published if walk detects a
-// panic during message dispatch. It must be called from the main goroutine.
-func (app *Application) Panicking() *ErrorEvent {
-	app.AssertUIThread()
-	return app.panickingPublisher.Event()
-}
-
-// maybePublishPanic is used by walk's top-level WndProcs to recover any
-// panic that occurred further down the call stack, convert it to an error,
-// and publish it as an event.
-func (app *Application) maybePublishPanic() {
-	if len(app.panickingPublisher.event.handlers) == 0 {
-		return
-	}
-
-	var err error
+// HandlePanicFromNativeCallback should be deferred at boundaries where native
+// code is invoking a callback into Go code. It recovers any panic that occurred
+// farther down the call stack and re-triggers the panic on a new goroutine,
+// ensuring that the panic will not be inadvertently suppressed by the native
+// code invoking the callback.
+func (app *Application) HandlePanicFromNativeCallback() {
 	if x := recover(); x != nil {
-		if e, ok := x.(error); ok {
-			err = wrapErrorNoPanic(e)
-		} else {
-			err = newErrorNoPanic(fmt.Sprint(x))
-		}
-	}
-	if err != nil {
-		app.panickingPublisher.Publish(err)
+		go panic(x)
+		// Don't let the main goroutine go anywhere past this point.
+		select {}
 	}
 }
 
@@ -714,7 +698,7 @@ func appWinEventProc(hook win.HWINEVENTHOOK, event uint32, hwnd win.HWND, idObje
 }
 
 func appMsgWndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
-	defer appSingleton.maybePublishPanic()
+	defer appSingleton.HandlePanicFromNativeCallback()
 
 	switch msg {
 	case appSingleton.syncFuncMsg:
