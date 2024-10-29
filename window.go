@@ -2021,13 +2021,18 @@ func (wb *WindowBase) requestLayout(immediate bool, completionFunc func()) {
 	}
 
 	if fb := form.AsFormBase(); activeForm != fb || immediate {
-		completionFuncs := append(fb.layoutCompletionFuncs, completionFunc)
+		completionFuncs := fb.layoutCompletionFuncs
 		fb.layoutCompletionFuncs = nil
+		if completionFunc != nil {
+			completionFuncs = append(completionFuncs, completionFunc)
+		}
 		fb.layoutScheduled = false
 		fb.startLayout(completionFuncs)
 	} else {
 		fb.layoutScheduled = true
-		fb.layoutCompletionFuncs = append(fb.layoutCompletionFuncs, completionFunc)
+		if completionFunc != nil {
+			fb.layoutCompletionFuncs = append(fb.layoutCompletionFuncs, completionFunc)
+		}
 	}
 }
 
