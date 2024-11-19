@@ -155,6 +155,7 @@ var (
 	nullBrushSingleton   Brush
 	whiteBrushSingleton  Brush
 	sysColorBtnFaceBrush *SystemColorBrush
+	windowBrushSingleton Brush
 )
 
 func BlackBrush() Brush {
@@ -180,6 +181,7 @@ func init() {
 		nullBrushSingleton = newStockBrush(win.NULL_BRUSH)
 		whiteBrushSingleton = newStockBrush(win.WHITE_BRUSH)
 		sysColorBtnFaceBrush, _ = NewSystemColorBrush(SysColorBtnFace)
+		windowBrushSingleton, _ = NewSystemColorBrush(SysColorWindow)
 	})
 }
 

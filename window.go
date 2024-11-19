@@ -2360,7 +2360,18 @@ func (wb *WindowBase) handleKeyUp(wParam, lParam uintptr) {
 	wb.keyUpPublisher.Publish(Key(wParam))
 }
 
+// backgroundEffective returns the effective background brush for wb and the
+// Window that brush belongs to. The Window is returned for the purpose of
+// computing the brush origin.
 func (wb *WindowBase) backgroundEffective() (Brush, Window) {
+	if IsHighContrastEnabled() {
+		// If we're high contrast then our background needs to be windowBrushSingleton,
+		// which will be solid black. Since it's a solid colour, we do not need to
+		// concern ourselves with brush origin; we may therefore skip the parent
+		// traversal and simply return our own Window.
+		return windowBrushSingleton, wb.window
+	}
+
 	wnd := wb.window
 	bg := wnd.Background()
 

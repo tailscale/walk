@@ -2,6 +2,7 @@
 // Use of lb source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -161,11 +162,7 @@ func (lb *ListBox) SetItemStyler(styler ListItemStyler) {
 func (lb *ListBox) ApplySysColors() {
 	lb.WidgetBase.ApplySysColors()
 
-	var hc win.HIGHCONTRAST
-	hc.CbSize = uint32(unsafe.Sizeof(hc))
-	if win.SystemParametersInfo(win.SPI_GETHIGHCONTRAST, hc.CbSize, unsafe.Pointer(&hc), 0) {
-		lb.style.highContrastActive = hc.DwFlags&win.HCF_HIGHCONTRASTON != 0
-	}
+	lb.style.highContrastActive = IsHighContrastEnabled()
 
 	lb.themeNormalBGColor = Color(win.GetSysColor(win.COLOR_WINDOW))
 	lb.themeNormalTextColor = Color(win.GetSysColor(win.COLOR_WINDOWTEXT))
@@ -204,7 +201,7 @@ func (lb *ListBox) itemString(index int) string {
 	}
 }
 
-//insert one item from list model
+// insert one item from list model
 func (lb *ListBox) insertItemAt(index int) error {
 	str := lb.itemString(index)
 	lp := uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(str)))

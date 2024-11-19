@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/tailscale/win"
 	"golang.org/x/exp/constraints"
@@ -650,4 +651,14 @@ func stripMargins(r *win.RECT, m win.MARGINS) {
 	r.Top += m.TopHeight
 	r.Right -= m.RightWidth
 	r.Bottom -= m.BottomHeight
+}
+
+// IsHighContrastEnabled returns whether the high-contrast accessibility setting
+// is currently enabled on this device.
+func IsHighContrastEnabled() bool {
+	hcSize := uint32(unsafe.Sizeof(win.HIGHCONTRAST{}))
+	hc := win.HIGHCONTRAST{
+		CbSize: hcSize,
+	}
+	return win.SystemParametersInfo(win.SPI_GETHIGHCONTRAST, hcSize, unsafe.Pointer(&hc), 0) && hc.DwFlags&win.HCF_HIGHCONTRASTON != 0
 }
