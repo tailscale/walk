@@ -17,6 +17,7 @@ type PushButton struct {
 	Button
 	contentMargins win.MARGINS
 	layoutFlags    LayoutFlags
+	wantDefault    bool
 }
 
 // NewPushButton creates a new PushButton as a child of parent with its
@@ -30,7 +31,7 @@ func NewPushButton(parent Container) (*PushButton, error) {
 type PushButtonOptions struct {
 	LayoutFlags  LayoutFlags // LayoutFlags to be used by the PushButton.
 	PredefinedID int         // When non-zero, must be one of the predefined control IDs <= [win.IDCONTINUE].
-	Default      bool        // When true, the PushButton will be initially created as a default PushButton.
+	Default      bool        // When true, the PushButton will set itself as the default PushButton for the Form it resides in.
 }
 
 // NewPushButtonWithOptions creates a new PushButton as a child of parent
@@ -42,20 +43,14 @@ func NewPushButtonWithOptions(parent Container, opts PushButtonOptions) (*PushBu
 
 	pb := &PushButton{
 		layoutFlags: opts.LayoutFlags,
-	}
-
-	style := uint32(win.WS_TABSTOP | win.WS_VISIBLE)
-	if opts.Default {
-		style |= win.BS_DEFPUSHBUTTON
-	} else {
-		style |= win.BS_PUSHBUTTON
+		wantDefault: opts.Default,
 	}
 
 	if err := InitWidget(
 		pb,
 		parent,
 		"BUTTON",
-		style,
+		win.WS_TABSTOP|win.WS_VISIBLE,
 		0); err != nil {
 		return nil, err
 	}
@@ -84,6 +79,65 @@ func (pb *PushButton) SetImageAboveText(value bool) error {
 	// We need to set the image again, or Windows will fail to calculate the
 	// button control size correctly.
 	return pb.SetImage(pb.image)
+}
+
+func (pb *PushButton) isDefault() bool {
+	return pb.hasStyleBits(win.BS_DEFPUSHBUTTON)
+}
+
+func (pb *PushButton) setCtrlID(ids ctrlIDAllocator) {
+	var id uint16
+	if !pb.usesPredefinedID {
+		id = ids.allocCtrlID()
+		pb.setCtrlIDInternal(id)
+	}
+
+	if pb.wantDefault {
+		if dlgExResolver, ok := pb.ancestor().(DialogExResolver); ok {
+			if pb.usesPredefinedID {
+				// We need to know the existing predefined ID.
+				id = pb.getCtrlID()
+			}
+
+			// Ensure BS_DEFPUSHBUTTON is set.
+			pb.setAndClearStyleBits(win.BS_DEFPUSHBUTTON, win.BS_PUSHBUTTON)
+
+			dlgEx := dlgExResolver.AsDialogEx()
+			// IDs are being assigned by FormBase code after the DialogEx has already
+			// been created, so we need to inform the dialog that our control ID
+			// represents the default button.
+			win.SendMessage(dlgEx.hWnd, win.DM_SETDEFID, uintptr(id), 0)
+			dlgEx.SetFocusToWindow(pb)
+		}
+	}
+}
+
+func (pb *PushButton) clearCtrlID(ids ctrlIDAllocator) {
+	var id uint16
+	if !pb.usesPredefinedID {
+		id = pb.setCtrlIDInternal(0)
+		ids.freeCtrlID(id)
+	}
+
+	if pb.wantDefault {
+		if dlgExResolver, ok := pb.ancestor().(DialogExResolver); ok {
+			if pb.usesPredefinedID {
+				// We need to know the existing predefined ID.
+				id = pb.getCtrlID()
+			}
+
+			// Ensure BS_DEFPUSHBUTTON is cleared.
+			pb.setAndClearStyleBits(win.BS_PUSHBUTTON, win.BS_DEFPUSHBUTTON)
+
+			dlgEx := dlgExResolver.AsDialogEx()
+			// See whether the dialog's current default ID is ours...
+			result := uint32(win.SendMessage(dlgEx.hWnd, win.DM_GETDEFID, 0, 0))
+			if win.HIWORD(result)&win.DC_HASDEFID != 0 && win.LOWORD(result) == id {
+				// ...and if so, clear it.
+				win.SendMessage(dlgEx.hWnd, win.DM_SETDEFID, uintptr(0), 0)
+			}
+		}
+	}
 }
 
 func (pb *PushButton) ensureProperDialogDefaultButton(hwndFocus win.HWND) {

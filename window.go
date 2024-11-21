@@ -456,6 +456,7 @@ type WindowBase struct {
 	suspended                   bool
 	visible                     bool
 	enabled                     bool
+	handlingFocusChange         bool
 	acc                         *Accessibility
 	themes                      map[string]*Theme
 	menuSharedMetricsInitialDPI *menuSharedMetrics
@@ -2553,6 +2554,11 @@ func (wb *WindowBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr)
 		wb.publishMouseWheelEvent(&wb.mouseWheelPublisher, wParam, lParam)
 
 	case win.WM_SETFOCUS, win.WM_KILLFOCUS:
+		wb.handlingFocusChange = true
+		defer func() {
+			wb.handlingFocusChange = false
+		}()
+
 		switch wnd := wb.window.(type) {
 		// case *splitterHandle:
 		// nop
