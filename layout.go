@@ -339,7 +339,10 @@ func applyLayoutResults(results []LayoutResult, stopwatch *stopwatch) error {
 							activeForm, _ := windowFromHandle(hwndForm).(Form)
 
 							if hwndFocused == 0 || form.Handle() == hwndFocused || activeForm != window.Form() {
-								form.AsFormBase().clientComposite.focusFirstCandidateDescendant()
+								// Only set explicit focus if we're not a DialogEx.
+								if _, isDialogEx := form.(DialogExResolver); !isDialogEx {
+									form.AsFormBase().clientComposite.focusFirstCandidateDescendant()
+								}
 							}
 						}()
 					}

@@ -209,11 +209,19 @@ func (dlg *DialogEx) dlgProc(hdlg win.HWND, msg uint32, wParam, lParam uintptr) 
 	case win.WM_NOTIFY:
 		dlg.FormBase.WndProc(hdlg, msg, wParam, lParam)
 		return true
-	case win.WM_SETTINGCHANGE, win.WM_THEMECHANGED, win.WM_SETTEXT, win.WM_WINDOWPOSCHANGED, win.WM_SYSCOLORCHANGE, win.WM_DPICHANGED, win.WM_GETMINMAXINFO:
-		dlg.FormBase.WndProc(hdlg, msg, wParam, lParam)
-		// Once we handle these messages, we return false so that DefDlgProc also receives them.
+	case win.WM_ACTIVATE:
+		// FormBase's WM_ACTIVATE handler does some goofy stuff with focus that we
+		// don't want, so we provide our own implementation.
+		switch win.LOWORD(uint32(wParam)) {
+		case win.WA_ACTIVE, win.WA_CLICKACTIVE:
+			activeForm = dlg.AsFormBase()
+		case win.WA_INACTIVE:
+			activeForm = nil
+		}
 		return false
 	default:
+		// Once we handle these messages, we return false so that DefDlgProc also receives them.
+		dlg.FormBase.WndProc(hdlg, msg, wParam, lParam)
 		return false
 	}
 }
@@ -251,13 +259,13 @@ func (dlg *DialogEx) Cancel() {
 // SetFocusNext moves keyboard focus to the next Widget in the dialog's tab
 // sequence.
 func (dlg *DialogEx) SetFocusNext() {
-	win.PostMessage(dlg.hWnd, win.WM_NEXTDLGCTL, 0, 0)
+	dlg.nextDlgCtl(0, 0)
 }
 
 // SetFocusPrev moves keyboard focus to the previous Widget in the dialog's tab
 // sequence.
 func (dlg *DialogEx) SetFocusPrev() {
-	win.PostMessage(dlg.hWnd, win.WM_NEXTDLGCTL, 1, 0)
+	dlg.nextDlgCtl(1, 0)
 }
 
 // SetFocusToWindow sets keyboard focus within dlg to the Window specified by w.
@@ -273,7 +281,7 @@ func (dlg *DialogEx) SetFocusToWindow(w Window) {
 		return
 	}
 
-	win.PostMessage(dlg.hWnd, win.WM_NEXTDLGCTL, uintptr(hwnd), 1)
+	dlg.nextDlgCtl(uintptr(hwnd), 1)
 }
 
 // EnterMode satisfies Modal.
@@ -421,4 +429,22 @@ func (dlg *DialogEx) routeWM_COMMAND(wParam, lParam uintptr) (result bool) {
 		return true
 	}
 	return false
+}
+
+// ResetDefaultFocus makes dlg re-determine its default pushbutton (if any),
+// and resets keyboard focus to dlg's default Widget.
+func (dlg *DialogEx) ResetDefaultFocus() {
+	// Use the HWND variant, but with a null HWND.
+	dlg.nextDlgCtl(0, 1)
+}
+
+func (dlg *DialogEx) nextDlgCtl(wParam, lParam uintptr) {
+	// Windows's keyboard focus-setting is not re-entrant. If we're already in
+	// the midst of processing a focus change, we need to post this message
+	// instead of sending it.
+	if dlg.handlingFocusChange {
+		win.PostMessage(dlg.hWnd, win.WM_NEXTDLGCTL, wParam, lParam)
+	} else {
+		win.SendMessage(dlg.hWnd, win.WM_NEXTDLGCTL, wParam, lParam)
+	}
 }
