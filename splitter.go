@@ -360,12 +360,12 @@ func (s *Splitter) onInsertedWidget(index int, widget Widget) (err error) {
 		layout.hwnd2Item[widget.Handle()] = item
 
 		layout.resetNeeded = true
-		if !layout.suspended && widget.AsWidgetBase().visible {
+		if !layout.suspended && widget.AsWidgetBase().Visible() {
 			s.RequestLayout()
 		}
 
 		item.visibleChangedHandle = widget.VisibleChanged().Attach(func() {
-			if !layout.suspended && widget.AsWidgetBase().visible != item.wasVisible {
+			if !layout.suspended && widget.AsWidgetBase().Visible() != item.wasVisible {
 				layout.resetNeeded = true
 				s.RequestLayout()
 			}
@@ -387,7 +387,7 @@ func (s *Splitter) onInsertedWidget(index int, widget Widget) (err error) {
 					index := offset + direction
 
 					for index >= 0 && index < len(s.children.items) {
-						if wb := s.children.items[index]; wb.visible {
+						if wb := s.children.items[index]; wb.Visible() {
 							return wb.window.(Widget)
 						}
 

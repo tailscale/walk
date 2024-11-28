@@ -35,7 +35,7 @@ func createLayoutItemForWidgetWithContext(widget Widget, ctx *LayoutContext) Lay
 	lib := item.AsLayoutItemBase()
 	lib.ctx = ctx
 	lib.handle = widget.Handle()
-	lib.visible = widget.AsWidgetBase().visible
+	lib.visible = widget.AsWidgetBase().Visible()
 	lib.geometry = widget.AsWidgetBase().geometry
 	lib.geometry.Alignment = widget.Alignment()
 	lib.geometry.MinSize = widget.MinSizePixels()
@@ -71,7 +71,7 @@ func CreateLayoutItemsForContainerWithContext(container Container, ctx *LayoutCo
 	clib.ctx = ctx
 	clib.handle = container.Handle()
 	cb := container.AsContainerBase()
-	clib.visible = cb.visible
+	clib.visible = cb.Visible()
 	clib.geometry = cb.geometry
 	clib.geometry.ConsumingSpaceWhenInvisible = cb.AlwaysConsumeSpace()
 

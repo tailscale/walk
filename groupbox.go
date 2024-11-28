@@ -50,13 +50,12 @@ func NewGroupBox(parent Container) (*GroupBox, error) {
 	}()
 
 	gb.hWndGroupBox = win.CreateWindowEx(
-		0, syscall.StringToUTF16Ptr("BUTTON"), nil,
+		win.WS_EX_CONTROLPARENT, syscall.StringToUTF16Ptr("BUTTON"), nil,
 		win.WS_CHILD|win.WS_VISIBLE|win.BS_GROUPBOX,
 		0, 0, 80, 24, gb.hWnd, 0, 0, nil)
 	if gb.hWndGroupBox == 0 {
 		return nil, lastError("CreateWindowEx(BUTTON)")
 	}
-	win.SetWindowLong(gb.hWndGroupBox, win.GWL_ID, 1)
 
 	gb.applyFont(gb.Font())
 	gb.updateHeaderHeight()
@@ -67,7 +66,6 @@ func NewGroupBox(parent Container) (*GroupBox, error) {
 	if err != nil {
 		return nil, err
 	}
-	win.SetWindowLong(gb.checkBox.hWnd, win.GWL_ID, 2)
 
 	gb.SetCheckable(false)
 	gb.checkBox.SetChecked(true)
@@ -82,7 +80,6 @@ func NewGroupBox(parent Container) (*GroupBox, error) {
 	if err != nil {
 		return nil, err
 	}
-	win.SetWindowLong(gb.composite.hWnd, win.GWL_ID, 3)
 	gb.composite.name = "composite"
 
 	win.SetWindowPos(gb.checkBox.hWnd, win.HWND_TOP, 0, 0, 0, 0, win.SWP_NOMOVE|win.SWP_NOSIZE)
@@ -238,7 +235,7 @@ func (gb *GroupBox) SetTitle(title string) error {
 }
 
 func (gb *GroupBox) Checkable() bool {
-	return gb.checkBox.visible
+	return gb.checkBox.Visible()
 }
 
 func (gb *GroupBox) SetCheckable(checkable bool) {
@@ -327,10 +324,15 @@ func (gb *GroupBox) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) u
 			gb.composite.WndProc(hwnd, msg, wParam, lParam)
 
 		case win.WM_SETTEXT:
+			// TODO(aaron): this never would have worked properly because this is
+			// the handler for the widget itself, NOT hWndGroupBox!
 			gb.titleChangedPublisher.Publish()
 
 		case win.WM_PAINT:
-			win.UpdateWindow(gb.checkBox.hWnd)
+			win.UpdateWindow(gb.hWndGroupBox)
+			if gb.Checkable() {
+				win.UpdateWindow(gb.checkBox.hWnd)
+			}
 
 		case win.WM_WINDOWPOSCHANGED:
 			wp := (*win.WINDOWPOS)(unsafe.Pointer(lParam))
