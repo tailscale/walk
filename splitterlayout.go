@@ -144,7 +144,7 @@ func (l *splitterLayout) SetStretchFactor(widget Widget, factor int) error {
 
 func (l *splitterLayout) anyNonFixed() bool {
 	for i, widget := range l.container.Children().items {
-		if i%2 == 0 && widget.visible && !l.Fixed(widget.window.(Widget)) {
+		if i%2 == 0 && widget.Visible() && !l.Fixed(widget.window.(Widget)) {
 			return true
 		}
 	}
@@ -159,7 +159,7 @@ func (l *splitterLayout) spaceUnavailableToRegularWidgets() int {
 	var space int
 
 	for _, widget := range l.container.Children().items {
-		if _, isHandle := widget.window.(*splitterHandle); isHandle && widget.visible {
+		if _, isHandle := widget.window.(*splitterHandle); isHandle && widget.Visible() {
 			space += splitter.handleWidth
 		}
 	}

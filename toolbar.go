@@ -58,7 +58,7 @@ func NewToolBarWithOrientationAndButtonStyle(parent Container, orientation Orien
 		tb,
 		parent,
 		"ToolbarWindow32",
-		win.CCS_NODIVIDER|win.TBSTYLE_FLAT|win.TBSTYLE_TOOLTIPS|style,
+		win.WS_TABSTOP|win.WS_VISIBLE|win.CCS_NODIVIDER|win.TBSTYLE_FLAT|win.TBSTYLE_TOOLTIPS|style,
 		0); err != nil {
 		return nil, err
 	}

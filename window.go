@@ -454,7 +454,6 @@ type WindowBase struct {
 	focusedChangedPublisher     EventPublisher
 	calcTextSizeInfo2TextSize   map[calcTextSizeInfo]Size // in native pixels
 	suspended                   bool
-	visible                     bool
 	enabled                     bool
 	acc                         *Accessibility
 	themes                      map[string]*Theme
@@ -612,7 +611,6 @@ func initWindowWithCfg(cfg *windowCfg) error {
 	wb.window = cfg.Window
 	wb.wndClassInfo, isWalkClass = registeredWindowClasses[cfg.ClassName]
 	wb.enabled = true
-	wb.visible = cfg.Style&win.WS_VISIBLE != 0
 	wb.calcTextSizeInfo2TextSize = make(map[calcTextSizeInfo]Size)
 	wb.name2Property = make(map[string]Property)
 	wb.themes = make(map[string]*Theme)
@@ -755,7 +753,7 @@ func (wb *WindowBase) finishInit() error {
 
 	wb.visibleProperty = NewBoolProperty(
 		func() bool {
-			return wb.visible
+			return wb.Visible()
 		},
 		func(b bool) error {
 			wb.window.SetVisible(b)
@@ -1303,7 +1301,7 @@ func (wb *WindowBase) SetSuspended(suspend bool) {
 
 	wb.SendMessage(win.WM_SETREDRAW, uintptr(wParam), 0)
 	wb.suspended = suspend
-	if !suspend && wb.visible {
+	if !suspend && wb.Visible() {
 		// Per WM_SETREDRAW docs, we should do a full RedrawWindow instead of InvalidateRect
 		wb.RedrawAll()
 		wb.RequestLayout()
@@ -1455,7 +1453,6 @@ func (wb *WindowBase) SetVisible(visible bool) {
 }
 
 func (wb *WindowBase) updateVisibility(visible bool) {
-	wb.visible = visible
 	walkDescendants(wb.window, func(w Window) bool {
 		w.AsWindowBase().visibleChangedPublisher.Publish()
 
@@ -1991,7 +1988,7 @@ func (wb *WindowBase) requestLayout(immediate bool, completionFunc func()) {
 			if form, ok = window.(Form); ok {
 				visible = form.Visible()
 			} else {
-				visible = window.AsWindowBase().visible
+				visible = window.AsWindowBase().Visible()
 			}
 
 			if !visible && window != wb.window || window.Suspended() {
