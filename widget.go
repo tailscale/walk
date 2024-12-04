@@ -389,13 +389,15 @@ func (wb *WidgetBase) SetParent(parent Container) (err error) {
 }
 
 func (wb *WidgetBase) assignCtrlIDs() {
-	form := wb.ancestor()
-	form.AsFormBase().assignCtrlIDs(wb)
+	if form := wb.ancestor(); form != nil {
+		form.AsFormBase().assignCtrlIDs(wb)
+	}
 }
 
 func (wb *WidgetBase) revokeCtrlIDs() {
-	form := wb.ancestor()
-	form.AsFormBase().revokeCtrlIDs(wb)
+	if form := wb.ancestor(); form != nil {
+		form.AsFormBase().revokeCtrlIDs(wb)
+	}
 }
 
 func (wb *WidgetBase) ForEachAncestor(f func(window Window) bool) {
