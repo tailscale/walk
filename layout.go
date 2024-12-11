@@ -8,6 +8,7 @@
 package walk
 
 import (
+	"context"
 	"sync"
 
 	"github.com/tailscale/win"
@@ -114,7 +115,7 @@ func startLayoutPerformer(form Form) (performLayout chan layoutStartInfo, layout
 
 	var stopwatch *stopwatch
 
-	go func() {
+	App().Go(func(ctx context.Context) {
 		sizing := false
 		busy := false
 		var cancel chan struct{}
@@ -122,6 +123,9 @@ func startLayoutPerformer(form Form) (performLayout chan layoutStartInfo, layout
 
 		for {
 			select {
+			case <-ctx.Done():
+				close(quit)
+
 			case startInfo := <-performLayout:
 				if busy {
 					close(cancel)
@@ -130,7 +134,10 @@ func startLayoutPerformer(form Form) (performLayout chan layoutStartInfo, layout
 				busy = true
 				cancel = make(chan struct{})
 
-				go layoutTree(startInfo, startInfo.item.Geometry().ClientSize, cancel, done, stopwatch)
+				App().Go(func(context.Context) {
+					// Note that this goroutine already selects on cancel which already has a dependency on context.
+					layoutTree(startInfo, startInfo.item.Geometry().ClientSize, cancel, done, stopwatch)
+				})
 
 			case results := <-done:
 				busy = false
@@ -166,7 +173,7 @@ func startLayoutPerformer(form Form) (performLayout chan layoutStartInfo, layout
 				return
 			}
 		}
-	}()
+	})
 
 	return
 }
@@ -215,7 +222,7 @@ func layoutTree(startInfo layoutStartInfo, size Size, cancel chan struct{}, done
 	results := make(chan LayoutResult)
 	finished := make(chan struct{})
 
-	go func() {
+	App().Go(func(context.Context) {
 		defer func() {
 			close(results)
 			close(finished)
@@ -227,6 +234,9 @@ func layoutTree(startInfo layoutStartInfo, size Size, cancel chan struct{}, done
 		layoutSubtree = func(container ContainerLayoutItem, size Size) {
 			wg.Add(1)
 
+			// We don't use App().Go() here because it's already in a WaitGroup
+			// and it already selects on cancel which indirectly is already dependent
+			// on App().Context().
 			go func() {
 				defer wg.Done()
 
@@ -270,7 +280,7 @@ func layoutTree(startInfo layoutStartInfo, size Size, cancel chan struct{}, done
 
 		case finished <- struct{}{}:
 		}
-	}()
+	})
 
 	var layoutResults []LayoutResult
 

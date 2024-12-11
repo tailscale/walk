@@ -108,6 +108,7 @@ type Application struct {
 	uiThreadID                    uint32
 	ctx                           context.Context
 	ctxCancel                     context.CancelFunc
+	waitGroup                     sync.WaitGroup
 	walkInit                      []func()
 	organizationName              atomic.Pointer[string]
 	productName                   atomic.Pointer[string]
@@ -383,7 +384,8 @@ func (app *Application) Run() int {
 	exitCode := app.runMainMessageLoop()
 
 	// Critical shutdown goes here; only the minimum necessary work to prevent
-	// data loss.
+	// crashing or data loss.
+	app.waitGroup.Wait()
 
 	return exitCode
 }
@@ -823,4 +825,28 @@ func (app *Application) AddPreTranslateHandlerForHWND(hwnd win.HWND, handler Pre
 func (app *Application) DeletePreTranslateHandlerForHWND(hwnd win.HWND) {
 	app.AssertUIThread()
 	delete(app.perWindowPreTranslateHandlers, hwnd)
+}
+
+// Go calls the given function in a new goroutine. Use this method for spawning
+// goroutines to ensure that they complete before the app exits. If f blocks,
+// it must also select on the Done channel obtained from its context argument to
+// ensure that its goroutine exits in a timely fashion; failing to do so will
+// result in the app hanging during shutdown.
+//
+// Go may be called from any goroutine. Go will not run f if
+// [(*Application).Exit] has already been called.
+func (app *Application) Go(f func(context.Context)) {
+	if app.ctx.Err() != nil {
+		return
+	}
+
+	app.waitGroup.Add(1)
+	go func() {
+		defer app.waitGroup.Done()
+		if app.ctx.Err() != nil {
+			return
+		}
+
+		f(app.ctx)
+	}()
 }

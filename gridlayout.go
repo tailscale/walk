@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -445,6 +446,7 @@ func (li *gridLayoutItem) MinSizeForSize(size Size) Size {
 				if hfw, ok := item.(HeightForWidther); ok && hfw.HasHeightForWidth() {
 					wg.Add(1)
 
+					// Already in a WaitGroup, so not using App().Go() here.
 					go func() {
 						height := hfw.HeightForWidth(li.spannedWidth(info, widths))
 
