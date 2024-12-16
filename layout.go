@@ -120,11 +120,14 @@ func startLayoutPerformer(form Form) (performLayout chan layoutStartInfo, layout
 		busy := false
 		var cancel chan struct{}
 		done := make(chan layoutResultsWithCompletionFuncs)
+		ctxDone := ctx.Done()
 
 		for {
 			select {
-			case <-ctx.Done():
+			case <-ctxDone:
 				close(quit)
+				// Remove ctxDone from futher consideration.
+				ctxDone = nil
 
 			case startInfo := <-performLayout:
 				if busy {
@@ -229,9 +232,7 @@ func layoutTree(startInfo layoutStartInfo, size Size, cancel chan struct{}, done
 		}()
 
 		var wg sync.WaitGroup
-
-		var layoutSubtree func(container ContainerLayoutItem, size Size)
-		layoutSubtree = func(container ContainerLayoutItem, size Size) {
+		layoutSubtree =: func(container ContainerLayoutItem, size Size) {
 			wg.Add(1)
 
 			// We don't use App().Go() here because it's already in a WaitGroup
