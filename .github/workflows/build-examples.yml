@@ -1,0 +1,45 @@
+name: Build Examples
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    # all PRs on all branches
+
+concurrency:
+  # For PRs, later CI runs preempt previous ones. e.g. a force push on a PR
+  # cancels running CI jobs and starts all new ones.
+  #
+  # For non-PR pushes, concurrency.group needs to be unique for every distinct
+  # CI run we want to have happen. Use run_id, which in practice means all
+  # non-PR CI runs will be allowed to run without preempting each other.
+  group: ${{ github.workflow }}-$${{ github.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Omitting arm64 for now; rsrc.syso produces linker errors
+        goarch: [ "386", "amd64" ]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install Go
+      uses: actions/setup-go@v4
+      with:
+        go-version-file: go.mod
+
+    - name: Set up build directory
+      run: |
+        mkdir -p ./examples/bin
+
+    - name: Build Binaries
+      run: |
+          go build -v -ldflags="-H windowsgui" -o ./examples/bin ./examples/...
+      env:
+        GOARCH: ${{ matrix.goarch }}
+        GOOS: windows
