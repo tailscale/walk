@@ -232,7 +232,7 @@ func layoutTree(startInfo layoutStartInfo, size Size, cancel chan struct{}, done
 		}()
 
 		var wg sync.WaitGroup
-		layoutSubtree =: func(container ContainerLayoutItem, size Size) {
+		layoutSubtree := func(container ContainerLayoutItem, size Size) {
 			wg.Add(1)
 
 			// We don't use App().Go() here because it's already in a WaitGroup
