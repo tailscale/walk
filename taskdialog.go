@@ -212,9 +212,10 @@ type TaskDialog interface {
 	// Show synchronously displays a TaskDialog using opts and returns information
 	// about the dialog's state at the time it was dismissed, or an error.
 	Show(opts TaskDialogOpts) (result TaskDialogResult, err error)
-	// Created returns an Event that is triggered when the Task Dialog has been
-	// created but before it is displayed.
-	Created() *Event
+	// Created returns the event that is triggered when the Task Dialog has been
+	// created but before it is displayed. The event's argument references the
+	// [Win32Window] underlying the dialog.
+	Created() *GenericEvent[Win32Window]
 	// ExpandoClicked returns the event that is triggered when the Task Dialog's
 	// expando button is clicked (when present). The event's argument is true
 	// when the dialog is to be expanded, and false when the dialog is to be
@@ -284,7 +285,7 @@ type TaskDialog interface {
 type taskDialog struct {
 	opts                *TaskDialogOpts
 	hwnd                win.HWND
-	created             EventPublisher
+	created             GenericEventPublisher[Win32Window]
 	expandoClicked      ProceedWithArgEventPublisher[bool]
 	help                EventPublisher
 	hyperlinkClicked    ProceedWithArgEventPublisher[string]
@@ -539,7 +540,7 @@ func (td *taskDialog) Show(opts TaskDialogOpts) (result TaskDialogResult, err er
 	return result, nil
 }
 
-func (td *taskDialog) Created() *Event {
+func (td *taskDialog) Created() *GenericEvent[Win32Window] {
 	return td.created.Event()
 }
 
@@ -718,7 +719,8 @@ func (td *taskDialog) msgProc(hwnd win.HWND, msg uint32, wParam uintptr, lParam 
 		td.configureUACButtons()
 		td.disableButtons()
 		td.maybeHideTitleBarIcon()
-		td.created.Publish()
+		ww := &Win32WindowImpl{hWnd: hwnd}
+		td.created.Publish(ww)
 	case win.TDN_NAVIGATED:
 	case win.TDN_BUTTON_CLICKED:
 		if td.handleButtonClicked(int32(wParam)) {
