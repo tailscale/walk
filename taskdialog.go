@@ -216,6 +216,9 @@ type TaskDialog interface {
 	// created but before it is displayed. The event's argument references the
 	// [Win32Window] underlying the dialog.
 	Created() *GenericEvent[Win32Window]
+	// Destroyed returns the event that is triggered when the Task Dialog's
+	// window is being destroyed.
+	Destroyed() *Event
 	// ExpandoClicked returns the event that is triggered when the Task Dialog's
 	// expando button is clicked (when present). The event's argument is true
 	// when the dialog is to be expanded, and false when the dialog is to be
@@ -286,6 +289,7 @@ type taskDialog struct {
 	opts                *TaskDialogOpts
 	hwnd                win.HWND
 	created             GenericEventPublisher[Win32Window]
+	destroyed           EventPublisher
 	expandoClicked      ProceedWithArgEventPublisher[bool]
 	help                EventPublisher
 	hyperlinkClicked    ProceedWithArgEventPublisher[string]
@@ -544,6 +548,10 @@ func (td *taskDialog) Created() *GenericEvent[Win32Window] {
 	return td.created.Event()
 }
 
+func (td *taskDialog) Destroyed() *Event {
+	return td.destroyed.Event()
+}
+
 func (td *taskDialog) Help() *Event {
 	return td.help.Event()
 }
@@ -735,6 +743,7 @@ func (td *taskDialog) msgProc(hwnd win.HWND, msg uint32, wParam uintptr, lParam 
 		td.timerFired.Publish(time.Duration(wParam) * time.Millisecond)
 	case win.TDN_DESTROYED:
 		td.hwnd = 0
+		td.destroyed.Publish()
 	case win.TDN_RADIO_BUTTON_CLICKED:
 		td.handleRadioButtonClicked(int32(wParam))
 	case win.TDN_DIALOG_CONSTRUCTED:
