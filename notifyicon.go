@@ -97,10 +97,11 @@ func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) {
 		ni.mouseDownPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), LeftButton)
 
 	case win.WM_LBUTTONUP:
-		if ni.showingContextMenu {
+		if ni.activeContextMenus > 0 {
 			win.PostMessage(hwnd, win.WM_CANCELMODE, 0, 0)
 			break
 		}
+
 		if len(ni.mouseDownPublisher.event.handlers) == 0 && len(ni.mouseUpPublisher.event.handlers) == 0 {
 			// If there are no mouse event handlers, then treat WM_LBUTTONUP as
 			// a "show context menu" event; this is consistent with Windows 7
@@ -126,7 +127,7 @@ func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) {
 		ni.mouseUpPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), RightButton)
 
 	case win.WM_CONTEXTMENU:
-		if ni.showingContextMenu {
+		if ni.activeContextMenus > 0 {
 			win.PostMessage(hwnd, win.WM_CANCELMODE, 0, 0)
 		} else {
 			ni.doContextMenu(hwnd, win.GET_X_LPARAM(wParam), win.GET_Y_LPARAM(wParam))
@@ -135,6 +136,12 @@ func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) {
 	case win.NIN_BALLOONUSERCLICK:
 		ni.reEnableToolTip()
 		ni.messageClickedPublisher.Publish()
+
+	case win.WM_ENTERMENULOOP:
+		ni.activeContextMenus++
+
+	case win.WM_EXITMENULOOP:
+		ni.activeContextMenus--
 	}
 }
 
@@ -162,13 +169,7 @@ func (ni *NotifyIcon) ShowContextMenu(x, y int) {
 }
 
 func (ni *NotifyIcon) doContextMenu(hwnd win.HWND, x, y int32) {
-	if ni.showingContextMenu {
-		return
-	}
-	ni.showingContextMenu = true
-	defer func() { ni.showingContextMenu = false }()
-
-	if !ni.showingContextMenuPublisher.Publish() || !ni.contextMenu.Actions().HasVisible() {
+	if ni.activeContextMenus > 0 || !ni.showingContextMenuPublisher.Publish() || !ni.contextMenu.Actions().HasVisible() {
 		return
 	}
 
@@ -487,9 +488,9 @@ type NotifyIcon struct {
 	mouseUpPublisher            MouseEventPublisher
 	messageClickedPublisher     EventPublisher
 	showingContextMenuPublisher ProceedEventPublisher
+	activeContextMenus          int // int because Win32 permits nested context menus
 	disableShowContextMenu      bool
 	visible                     bool
-	showingContextMenu          bool
 }
 
 // NewNotifyIcon creates and returns a new NotifyIcon.
