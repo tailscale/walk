@@ -66,6 +66,11 @@ type Form interface {
 
 	// SetFocusToWindow sets keyboard focus to the Window specified by w.
 	SetFocusToWindow(w Window)
+
+	// EnteringMode returns the event that is triggered if the Form is entering
+	// a modal loop. Use [Disposing] to for notification when the Form is leaving
+	// the modal loop.
+	EnteringMode() *Event
 }
 
 type FormBase struct {
@@ -84,6 +89,7 @@ type FormBase struct {
 	startingPublisher           EventPublisher
 	titleChangedPublisher       EventPublisher
 	iconChangedPublisher        EventPublisher
+	enteringModePublisher       EventPublisher
 	progressIndicator           *ProgressIndicator
 	icon                        Image
 	prevFocusHWnd               win.HWND
@@ -512,6 +518,10 @@ func (fb *FormBase) Starting() *Event {
 	return fb.startingPublisher.Event()
 }
 
+func (fb *FormBase) EnteringMode() *Event {
+	return fb.enteringModePublisher.Event()
+}
+
 func (fb *FormBase) Activating() *Event {
 	return fb.activatingPublisher.Event()
 }
@@ -908,6 +918,7 @@ func (fb *FormBase) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) u
 }
 
 func (fb *FormBase) EnterMode() {
+	fb.enteringModePublisher.Publish()
 }
 
 func (fb *FormBase) Running() bool {
