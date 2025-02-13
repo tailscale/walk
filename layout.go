@@ -172,7 +172,6 @@ func startLayoutPerformer(form Form) (performLayout chan layoutStartInfo, layout
 					close(cancel)
 				}
 				close(done)
-				close(quit)
 				return
 			}
 		}
