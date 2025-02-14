@@ -14,6 +14,8 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"runtime/debug"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -249,6 +251,32 @@ func (app *Application) Exit(exitCode int) {
 	postQuitMsg()
 }
 
+type redirectedPanicError struct {
+	inner any
+	stack []byte
+}
+
+func (e *redirectedPanicError) Error() string {
+	var msg string
+	switch v := e.inner.(type) {
+	case string:
+		msg = v
+	case error:
+		msg = v.Error()
+	case fmt.Stringer:
+		msg = v.String()
+	}
+
+	return strings.Join([]string{msg, string(e.stack)}, "\n")
+}
+
+func (e *redirectedPanicError) Unwrap() error {
+	if err, ok := e.inner.(error); ok {
+		return err
+	}
+	return nil
+}
+
 // HandlePanicFromNativeCallback should be deferred at boundaries where native
 // code is invoking a callback into Go code. It recovers any panic that occurred
 // farther down the call stack and re-triggers the panic on a new goroutine,
@@ -256,7 +284,11 @@ func (app *Application) Exit(exitCode int) {
 // code invoking the callback.
 func (app *Application) HandlePanicFromNativeCallback() {
 	if x := recover(); x != nil {
-		go panic(x)
+		e := &redirectedPanicError{
+			inner: x,
+			stack: debug.Stack(), // Since we're in a recover, Stack will report the panicking stack!
+		}
+		go panic(e)
 		// Don't let the main goroutine go anywhere past this point.
 		select {}
 	}
