@@ -69,6 +69,10 @@ func (niw *notifyIconWindow) WndProc(hwnd win.HWND, msg uint32, wParam, lParam u
 		win.SetWindowPos(hwnd, 0, 0, 0, 0, 0, win.SWP_HIDEWINDOW|win.SWP_NOACTIVATE|win.SWP_NOSIZE|win.SWP_NOZORDER)
 	case win.WM_DPICHANGED:
 		niw.forIcon(func(ni *NotifyIcon) { ni.applyDPI() })
+	case win.WM_ENTERMENULOOP:
+		niw.forIcon(func(ni *NotifyIcon) { ni.activeContextMenus++ })
+	case win.WM_EXITMENULOOP:
+		niw.forIcon(func(ni *NotifyIcon) { ni.activeContextMenus-- })
 	default:
 	}
 
@@ -136,12 +140,6 @@ func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) {
 	case win.NIN_BALLOONUSERCLICK:
 		ni.reEnableToolTip()
 		ni.messageClickedPublisher.Publish()
-
-	case win.WM_ENTERMENULOOP:
-		ni.activeContextMenus++
-
-	case win.WM_EXITMENULOOP:
-		ni.activeContextMenus--
 	}
 }
 
