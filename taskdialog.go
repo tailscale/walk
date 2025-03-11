@@ -376,12 +376,14 @@ func (td *taskDialog) Show(opts TaskDialogOpts) (result TaskDialogResult, err er
 	default:
 	}
 
-	switch opts.CommandLinkMode {
-	case TaskDialogCommandLinks:
-		flags |= win.TDF_USE_COMMAND_LINKS_NO_ICON
-	case TaskDialogCommandLinksWithGlyph:
-		flags |= win.TDF_USE_COMMAND_LINKS
-	default:
+	if len(opts.CustomButtons) > 0 {
+		switch opts.CommandLinkMode {
+		case TaskDialogCommandLinks:
+			flags |= win.TDF_USE_COMMAND_LINKS_NO_ICON
+		case TaskDialogCommandLinksWithGlyph:
+			flags |= win.TDF_USE_COMMAND_LINKS
+		default:
+		}
 	}
 
 	defaultRadioButtonID := td.defaultRadioButtonID()
