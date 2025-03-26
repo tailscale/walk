@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package walk
@@ -549,6 +550,8 @@ func (tw *TabWidget) onInsertedPage(index int, page *TabPage) (err error) {
 		return lastError("SetParent")
 	}
 
+	page.assignCtrlIDs()
+
 	if tw.pages.Len() == 1 {
 		page.SetVisible(true)
 		tw.SetCurrentIndex(0)
@@ -595,6 +598,8 @@ func (tw *TabWidget) onRemovedPage(index int, page *TabPage) (err error) {
 	if err != nil {
 		return
 	}
+
+	page.revokeCtrlIDs()
 
 	win.SendMessage(tw.hWndTab, win.TCM_DELETEITEM, uintptr(index), 0)
 
