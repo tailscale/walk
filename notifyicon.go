@@ -100,7 +100,9 @@ func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) {
 	case win.WM_LBUTTONDOWN:
 		ni.mouseDownPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), LeftButton)
 
-	case win.WM_LBUTTONUP:
+	// We treat keyboard selection of the icon identically to a left-click.
+	// All three messages use the same format for wParam.
+	case win.NIN_KEYSELECT, win.NIN_SELECT, win.WM_LBUTTONUP:
 		if ni.activeContextMenus > 0 {
 			win.PostMessage(hwnd, win.WM_CANCELMODE, 0, 0)
 			break
@@ -197,8 +199,9 @@ func (ni *NotifyIcon) doContextMenu(hwnd win.HWND, x, y int32) {
 }
 
 func isTaskbarPresent() bool {
-	var abd win.APPBARDATA
-	abd.CbSize = uint32(unsafe.Sizeof(abd))
+	abd := win.APPBARDATA{
+		CbSize: uint32(unsafe.Sizeof(win.APPBARDATA{})),
+	}
 	return win.SHAppBarMessage(win.ABM_GETTASKBARPOS, &abd) != 0
 }
 
@@ -227,7 +230,9 @@ func newNotificationIconWindow() (*notifyIconWindow, error) {
 	niwCfg := windowCfg{
 		Window:    niw,
 		ClassName: notifyIconWindowClass,
-		Style:     win.WS_OVERLAPPEDWINDOW,
+		// Creating the window with WS_DISABLED in an effort to dissuade screen
+		// readers from treating the hidden window as focusable content.
+		Style:     win.WS_OVERLAPPEDWINDOW | win.WS_DISABLED,
 		// Always create the window at the origin, thus ensuring that the window
 		// resides on the desktop's primary monitor, which is the same monitor where
 		// the taskbar notification area resides. This ensures that the window's
@@ -239,6 +244,10 @@ func newNotificationIconWindow() (*notifyIconWindow, error) {
 	if err := initWindowWithCfg(&niwCfg); err != nil {
 		return nil, err
 	}
+
+	// By default the window has the "client" role, which suggests content.
+	// Assigning the "window" role instead.
+	niw.Accessibility().SetRole(AccRoleWindow)
 	return niw, nil
 }
 
@@ -275,19 +284,10 @@ func newShellNotificationIcon(guid *windows.GUID) (*shellNotificationIcon, error
 		return shellIcon, nil
 	}
 
-	if guid != nil {
-		// If we're using a GUID, an add operation can fail if a previous instance
-		// using this GUID terminated abnormally and its notification icon was left
-		// behind on the taskbar. Preemptively delete any pre-existing icon.
-		if delCmd := shellIcon.newCmd(win.NIM_DELETE); delCmd != nil {
-			// The previous instance would have used a different, now-defunct HWND, so
-			// we can't use one here...
-			delCmd.nid.HWnd = win.HWND(0)
-			// We expect delCmd.execute() to fail if there isn't a pre-existing icon,
-			// so no error checking for this call.
-			delCmd.execute()
-		}
-	}
+	// If we're using a GUID, an add operation can fail if a previous instance
+	// using this GUID terminated abnormally and its notification icon was left
+	// behind on the taskbar. Preemptively delete any pre-existing icon.
+	shellIcon.clearAnyPreExisting()
 
 	// Add our notify icon to the status area and make sure it is hidden.
 	addCmd := shellIcon.newCmd(win.NIM_ADD)
@@ -300,13 +300,32 @@ func newShellNotificationIcon(guid *windows.GUID) (*shellNotificationIcon, error
 	return shellIcon, nil
 }
 
-func (i *shellNotificationIcon) setOwner(ni *NotifyIcon) {
-	// Only icons identified via GUID use the owner field; non-GUID icons share
-	// the same window and thus need to be looked up via notifyIconIDs.
+// clearAnyPreExisting deletes any GUID-based notification icon that might
+// still exist after either the shell restarts or this app restarts. Either
+// way, re-adding an icon with the same GUID will fail unless we delete the
+// previous instance first.
+func (i *shellNotificationIcon) clearAnyPreExisting() {
+	// Only meaningful for GUID-based icons.
 	if i.guid == nil {
 		return
 	}
-	i.window.owner = ni
+
+	if delCmd := i.newCmd(win.NIM_DELETE); delCmd != nil {
+		// The previous instance would have used a different, now-defunct HWND, so
+		// we can't use one here...
+		delCmd.nid.HWnd = win.HWND(0)
+		// We expect delCmd.execute() to fail if there isn't a pre-existing icon,
+		// so no error checking for this call.
+		delCmd.execute()
+	}
+}
+
+func (i *shellNotificationIcon) setOwner(ni *NotifyIcon) {
+	// Only icons identified via GUID use the owner field; non-GUID icons share
+	// the same window and thus need to be looked up via notifyIconIDs.
+	if i.guid != nil {
+		i.window.owner = ni
+	}
 }
 
 func (i *shellNotificationIcon) Dispose() error {
@@ -455,6 +474,13 @@ func (cmd *niCmd) setVisible(v bool) {
 }
 
 func (cmd *niCmd) execute() error {
+	var addShowTip bool
+	if cmd.op == win.NIM_ADD && (cmd.nid.UFlags&win.NIF_SHOWTIP) != 0 {
+		// NIF_SHOWTIP is a v4 flag. Don't include it in flags for NIM_ADD, which
+		// is a v1 operation. We add it back in below, after we've upgraded to v4.
+		addShowTip = true
+		cmd.nid.UFlags ^= win.NIF_SHOWTIP
+	}
 	if !win.Shell_NotifyIcon(cmd.op, &cmd.nid) {
 		return lastError(fmt.Sprintf("Shell_NotifyIcon(%d, %#v)", cmd.op, cmd.nid))
 	}
@@ -473,7 +499,14 @@ func (cmd *niCmd) execute() error {
 	verCmd.op = win.NIM_SETVERSION
 	// Use Vista+ behaviour.
 	verCmd.nid.UVersion = win.NOTIFYICON_VERSION_4
-	return verCmd.execute()
+	if err := verCmd.execute(); err != nil || !addShowTip {
+		return err
+	}
+
+	showTipCmd := *cmd
+	showTipCmd.op = win.NIM_MODIFY
+	showTipCmd.nid.UFlags |= win.NIF_SHOWTIP
+	return showTipCmd.execute()
 }
 
 // NotifyIcon represents an icon in the taskbar notification area.
@@ -550,6 +583,11 @@ func (ni *NotifyIcon) reAddToTaskbar() {
 	// The icon ID may or may not change; save the previous ID so we can properly
 	// track this once the add command successfully executes.
 	prevID := ni.shellIcon.id
+
+	// If we're using a GUID, an add operation can fail if a previous instance
+	// using this GUID terminated abnormally and its notification icon was left
+	// behind on the taskbar. Preemptively delete any pre-existing icon.
+	ni.shellIcon.clearAnyPreExisting()
 
 	cmd := ni.shellIcon.newCmd(win.NIM_ADD)
 	cmd.setCallbackMessage(notifyIconMessageID)
