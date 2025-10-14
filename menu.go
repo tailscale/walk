@@ -239,10 +239,15 @@ func (m *Menu) initMenuItemInfoFromAction(mii *win.MENUITEMINFO, action *Action)
 		if bmp, err := iconCache.Bitmap(action.image, dpi); err == nil {
 			mii.HbmpItem = bmp.hBmp
 		}
-	case action.IsSeparator():
+	default:
+	}
+
+	// Being a separator is not mutually-exclusive to being an image or
+	// owner-draw item, so we must perform this check separately from the
+	// switch above.
+	if action.IsSeparator() {
 		mii.FType |= win.MFT_SEPARATOR
 		setString = false
-	default:
 	}
 
 	if setString {
