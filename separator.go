@@ -41,9 +41,9 @@ func newSeparator(parent Container, vertical bool) (*Separator, error) {
 func (s *Separator) CreateLayoutItem(ctx *LayoutContext) LayoutItem {
 	var layoutFlags LayoutFlags
 	if s.vertical {
-		layoutFlags = GrowableHorz | GreedyHorz
-	} else {
 		layoutFlags = GrowableVert | GreedyVert
+	} else {
+		layoutFlags = GrowableHorz | GreedyHorz
 	}
 
 	return &separatorLayoutItem{
