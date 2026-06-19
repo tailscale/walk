@@ -45,21 +45,23 @@ func (niw *notifyIconWindow) Dispose() {
 	niw.WindowBase.Dispose()
 }
 
+func (niw *notifyIconWindow) nidToNotifyIcon(nid uint16) *NotifyIcon {
+	if ni := niw.owner; ni != nil {
+		return ni
+	}
+
+	// No GUID, try resolving via integral ID.
+	return notifyIconIDs[nid]
+}
+
 func (niw *notifyIconWindow) WndProc(hwnd win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
 	switch msg {
 	case notifyIconMessageID:
 		lp32 := uint32(lParam)
-		ni := niw.owner
-		if ni == nil {
-			// No GUID, try resolving via integral ID.
-			ni = notifyIconIDs[win.HIWORD(lp32)]
-			if ni == nil {
-				// We don't need to call DefWindowProc because this is an app-defined message.
-				return 0
-			}
+		if ni := niw.nidToNotifyIcon(win.HIWORD(lp32)); ni != nil {
+			ni.wndProc(hwnd, win.LOWORD(lp32), wParam)
 		}
 
-		ni.wndProc(hwnd, win.LOWORD(lp32), wParam)
 		// We don't need to call DefWindowProc because this is an app-defined message.
 		return 0
 	case taskbarCreatedMsgId:
@@ -73,6 +75,12 @@ func (niw *notifyIconWindow) WndProc(hwnd win.HWND, msg uint32, wParam, lParam u
 		niw.forIcon(func(ni *NotifyIcon) { ni.activeContextMenus++ })
 	case win.WM_EXITMENULOOP:
 		niw.forIcon(func(ni *NotifyIcon) { ni.activeContextMenus-- })
+	case win.WM_TIMER:
+		tid := niTimerID(wParam)
+		if ni := niw.nidToNotifyIcon(tid.notificationIconID()); ni != nil {
+			ni.wndProc(hwnd, win.WM_TIMER, wParam)
+			return 0
+		}
 	default:
 	}
 
@@ -100,9 +108,28 @@ func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) {
 	case win.WM_LBUTTONDOWN:
 		ni.mouseDownPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), LeftButton)
 
-	// We treat keyboard selection of the icon identically to a left-click.
-	// Both messages use the same format for wParam.
-	case win.NIN_KEYSELECT, win.NIN_SELECT:
+	case win.NIN_KEYSELECT:
+		// NIN_KEYSELECT is extremely poorly documented, but Spy++ dumps show it
+		// delivering a second notification immediately after the first under certain
+		// conditions (such as when the enter key is used to make the selection).
+		// Since we're only interested in the first notification, we set a timer
+		// and ignore any further notifications for a short duration of time.
+		// The double-click time feels like a sufficient duration to suppress
+		// the extras.
+		if ni.keySelectTimerID != 0 {
+			return
+		}
+
+		// We use a HWND-based timer since we're already processing messages for
+		// the current window: timer notifications will therefore be posted via
+		// the same message queue already being used for keyboard input.
+		// We include ni's identifier in the timer ID to ensure that we can route
+		// the WM_TIMER to the appropriate NotifyIcon.
+		tid := makeNotifyIconTimerID(win.NIN_KEYSELECT, ni.id())
+		ni.keySelectTimerID = niTimerID(win.SetTimer(hwnd, uintptr(tid), win.GetDoubleClickTime(), 0))
+		fallthrough
+
+	case win.NIN_SELECT:
 		if ni.activeContextMenus > 0 {
 			win.PostMessage(hwnd, win.WM_CANCELMODE, 0, 0)
 			break
@@ -142,6 +169,13 @@ func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) {
 	case win.NIN_BALLOONUSERCLICK:
 		ni.reEnableToolTip()
 		ni.messageClickedPublisher.Publish()
+
+	case win.WM_TIMER:
+		if tid := niTimerID(wParam); tid.notificationCode() == win.NIN_KEYSELECT {
+			if win.KillTimer(hwnd, uintptr(ni.keySelectTimerID)) {
+				ni.keySelectTimerID = 0
+			}
+		}
 	}
 }
 
@@ -509,6 +543,20 @@ func (cmd *niCmd) execute() error {
 	return showTipCmd.execute()
 }
 
+type niTimerID uintptr
+
+func (tid niTimerID) notificationCode() uint16 {
+	return uint16(tid)
+}
+
+func (tid niTimerID) notificationIconID() uint16 {
+	return win.HIWORD(uint32(tid))
+}
+
+func makeNotifyIconTimerID(notificationCode, notifyIconID uint16) niTimerID {
+	return niTimerID(win.MAKELONG(notificationCode, notifyIconID))
+}
+
 // NotifyIcon represents an icon in the taskbar notification area.
 type NotifyIcon struct {
 	shellIcon                   *shellNotificationIcon
@@ -520,6 +568,7 @@ type NotifyIcon struct {
 	messageClickedPublisher     EventPublisher
 	showingContextMenuPublisher ProceedEventPublisher
 	activeContextMenus          int // int because Win32 permits nested context menus
+	keySelectTimerID            niTimerID
 	disableShowContextMenu      bool
 	visible                     bool
 }
@@ -569,6 +618,19 @@ func newNotifyIcon(guid *windows.GUID) (*NotifyIcon, error) {
 	}
 
 	return ni, nil
+}
+
+func (ni *NotifyIcon) id() uint16 {
+	si := ni.shellIcon
+	if si == nil {
+		return 0
+	}
+
+	if pid := si.id; pid != nil {
+		return uint16(*pid)
+	}
+
+	return 0
 }
 
 func (ni *NotifyIcon) DPI() int {
