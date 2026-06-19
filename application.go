@@ -718,6 +718,8 @@ func AppendToWalkInit(fn func()) {
 }
 
 func appWinEventProc(hook win.HWINEVENTHOOK, event uint32, hwnd win.HWND, idObject int32, idChild int32, idEventThread uint32, eventTimeMilliseconds uint32) uintptr {
+	defer appSingleton.HandlePanicFromNativeCallback()
+
 	switch event {
 	case win.EVENT_OBJECT_CLOAKED, win.EVENT_OBJECT_UNCLOAKED:
 		var wparam uintptr
@@ -868,7 +870,7 @@ func (app *Application) DeletePreTranslateHandlerForHWND(hwnd win.HWND) {
 // Go may be called from any goroutine. Go will not run f if
 // [(*Application).Exit] has already been called.
 func (app *Application) Go(f func(context.Context)) {
-	if app.ctx.Err() != nil {
+	if f == nil || app.ctx.Err() != nil {
 		return
 	}
 
