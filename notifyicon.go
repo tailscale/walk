@@ -101,8 +101,8 @@ func (ni *NotifyIcon) wndProc(hwnd win.HWND, msg uint16, wParam uintptr) {
 		ni.mouseDownPublisher.Publish(int(win.GET_X_LPARAM(wParam)), int(win.GET_Y_LPARAM(wParam)), LeftButton)
 
 	// We treat keyboard selection of the icon identically to a left-click.
-	// All three messages use the same format for wParam.
-	case win.NIN_KEYSELECT, win.NIN_SELECT, win.WM_LBUTTONUP:
+	// Both messages use the same format for wParam.
+	case win.NIN_KEYSELECT, win.NIN_SELECT:
 		if ni.activeContextMenus > 0 {
 			win.PostMessage(hwnd, win.WM_CANCELMODE, 0, 0)
 			break
@@ -232,7 +232,7 @@ func newNotificationIconWindow() (*notifyIconWindow, error) {
 		ClassName: notifyIconWindowClass,
 		// Creating the window with WS_DISABLED in an effort to dissuade screen
 		// readers from treating the hidden window as focusable content.
-		Style:     win.WS_OVERLAPPEDWINDOW | win.WS_DISABLED,
+		Style: win.WS_OVERLAPPEDWINDOW | win.WS_DISABLED,
 		// Always create the window at the origin, thus ensuring that the window
 		// resides on the desktop's primary monitor, which is the same monitor where
 		// the taskbar notification area resides. This ensures that the window's
@@ -820,7 +820,7 @@ func (ni *NotifyIcon) MouseDown() *MouseEvent {
 	return ni.mouseDownPublisher.Event()
 }
 
-// MouseDown returns the event that is published when a mouse button is released
+// MouseUp returns the event that is published when a mouse button is released
 // while the cursor is over the NotifyIcon.
 func (ni *NotifyIcon) MouseUp() *MouseEvent {
 	return ni.mouseUpPublisher.Event()
